@@ -17,7 +17,7 @@ Realizado en C y Python.
 
 ## Requisitos **Opcionales** para un mejor compilado
 - **pyinstaller:** Herramienta utilizada para crear archivos ejecutables a partir de scripts de Python.
-
+- `pip install pyinstaller`
 ## Makefile
 
 - **make:** Compila el módulo servidor y copia los ficheros del módulo cliente a la raíz.
