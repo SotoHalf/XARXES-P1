@@ -30,3 +30,4 @@ clean_client:
 clean_py_files:
 	# Delete .py files
 	rm *.py
+	rm -rf __pycache__
