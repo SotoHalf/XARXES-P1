@@ -1,0 +1,4 @@
+
+def printSp():
+    print("Special")
+
