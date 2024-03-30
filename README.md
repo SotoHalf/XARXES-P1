@@ -15,7 +15,7 @@ Realizado en C y Python.
 
 ---
 
-## Requisitos **Opcionales** para un mejor compilado
+## Requisitos **Opcionales**
 - **pyinstaller:** Herramienta utilizada para crear archivos ejecutables a partir de scripts de Python.
 - `pip install pyinstaller`
 ## Makefile
