@@ -3,8 +3,8 @@
 ---
 
 ## Autor
-- **Nombre:** [Raúl Soto]
-- **Universidad:** [Escuela Politécnica Superior de la Universidad de Lleida]
+- **Nombre:** Raúl Soto
+- **Universidad:** Escuela Politécnica Superior de la Universidad de Lleida
 
 ---
 
