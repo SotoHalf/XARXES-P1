@@ -5,10 +5,13 @@ from pprint import pprint
 
 #-------------------------------
 import common
-from util_functions import load_args, load_config_file
+from common import print_format
 from class_manager import Client
-
- 
+from util_functions import (
+    load_args, 
+    load_config_file,
+    subscription_start
+)
     
 def main():
     #Get args by user
@@ -16,7 +19,10 @@ def main():
     #Load config client file
     client = load_config_file()
 
-    print(str(client))
+    #subscription
+    subscription_start(client)
+
+    #print_format(str(client))
 
     
 

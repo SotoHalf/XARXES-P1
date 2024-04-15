@@ -1,8 +1,70 @@
 import sys
 import os
+import random
+import time
 #-------------------------------
 import common
+from common import print_format
 from class_manager import Client, Element
+
+
+#subscription
+def subscription_send(client):
+    
+    
+    pass
+
+def subscription_process(client,t,p,q,n):
+    client.set_current_state("WAIT_ACK_SUBS")
+    print_format(f"Controlador passa a l'estat: {client.get_current_state()}")
+
+    count = 0
+    time_wait = t
+    while count < n:
+        #per debug anira be
+        """
+        print('----------------------')
+        print(f"t={t} p={p} q={q} n={n} count={count} time_wait={time_wait}")
+        print('----------------------')
+        """
+        #we increase 't' until we send 'p' packets up to reach 'q'
+        if count >= p and time_wait < q+t:
+            time_wait += 1
+        subscription_send(client)
+        #crec que els time.sleep no funcionara perque enviara 
+        #el ack i es perdra, provar i modificar si fos el cas #borrar
+        time.sleep(time_wait)
+        count += 1
+
+#despres fer els estats
+def subscription_start(client):
+
+    MIN_PACKAGES = 3
+    MAX_PACKAGES = 5
+    MIN_RESTART = 1
+    MAX_RESTART = 3
+    MAX_SUBCRIPTIONS = 3
+
+    t = 1 #time
+    p = random.randint(MIN_PACKAGES,MAX_PACKAGES+1) #packages
+    q = random.randint(MIN_PACKAGES,MAX_PACKAGES+1) # q to increment t
+    n = p + q + random.randint(MIN_PACKAGES,MAX_PACKAGES+1) #in case to fail p + q 
+    u = random.randint(MIN_RESTART,MAX_RESTART+1) #time wait to restart process
+    o = MAX_SUBCRIPTIONS #max subcription_process 
+
+    #per debug pot ser 
+    print(f"t={t} p={p} q={q} n={n} u={u} o={o}")
+
+    while client.get_current_state() == "NOT_SUBSCRIBED" and o > 0:
+
+        print_format(f"Controlador en l'estat: {client.get_current_state()}, procés de subscripció: {MAX_SUBCRIPTIONS-o+1}")
+        subscription_process(client,t,p,q,n)
+        o-=1
+        
+        client.set_current_state("NOT_SUBSCRIBED")
+        print_format(f"Controlador passa a l'estat: {client.get_current_state()}")
+        #Aqui igual que adalt #borrar
+        time.sleep(u) #wait u sec to try again
 
 
 #Load config client file
