@@ -10,8 +10,6 @@ from class_manager import Client, Element
 
 #subscription
 def subscription_send(client):
-    
-    
     pass
 
 def subscription_process(client,t,p,q,n):
