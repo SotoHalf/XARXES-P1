@@ -24,6 +24,15 @@ PACKAGE_TYPE_SUB = {
     0x05: "SUBS_NACK", #Error de subscripció
 }
 
+PACKAGE_TYPE_SUB_REVERSE = {
+    "SUBS_REQ"  : 0x00,   #Petició de subscripció
+    "SUBS_ACK"  : 0x01,   #Acceptació de paquet de subscripció
+    "SUBS_REJ"  : 0x02,   #Rebuig de subscripció
+    "SUBS_INFO" : 0x03,   #Paquet addicional de subscripció
+    "INFO_ACK"  : 0x04,   #Acceptació del paquet addicional de subscripció
+    "SUBS_NACK" : 0x05,   #Error de subscripció
+}
+
 CLIENT_STATES = {
     0xa0: "DISCONNECTED"   , # Controlador desconnectat
     0xa1: "NOT_SUBSCRIBED" , # Controlador connectat i no subscrit
@@ -45,7 +54,9 @@ CLIENT_STATES_REVERSE = {
 }
 
 FLAG_PRINT = {
-    0 : "MSG"
+    0 : "MSG",
+    1 : "ERROR",
+    2 : "DEBUG"
 }
 
 # --------- FUNCTIONS ---------
