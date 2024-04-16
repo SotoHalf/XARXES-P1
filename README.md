@@ -14,6 +14,8 @@ Creado como práctica de laboratorio para la universidad.
 Realizado en C y Python.
 
 ---
+## Requisitos
+- **python3:** Este proyecto utiliza Python3.8.10
 
 ## Requisitos **Opcionales**
 - **pyinstaller:** Herramienta utilizada para crear archivos ejecutables a partir de scripts de Python.

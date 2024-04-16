@@ -5,12 +5,24 @@ import time
 #-------------------------------
 import common
 from common import print_format
-from class_manager import Client, Element, SocketSetup
+from class_manager import Client, Element, SocketSetup, PDU
 
 #subscription
-def subscription_send(client:Client, socket:SocketSetup):
-    socket.sendto("test")
-    #socket.close()
+def subscription_send(client:Client, socket:SocketSetup, time_wait:int):
+    datagram = PDU(**{
+        "typePdu" : "SUBS_REQ",
+        "client" : client
+    })
+    socket.sendto(datagram, timeout = time_wait)
+    data_recived = socket.recvData()    
+    return data_recived
+
+def subscription_recived(client:Client, data_recived:bytes):
+    print(data_recived)
+    sys.exit()
+
+    pass
+
 
 def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int, n:int):
     client.set_current_state("WAIT_ACK_SUBS")
@@ -27,10 +39,11 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
         #we increase 't' until we send 'p' packets up to reach 'q'
         if count >= p and time_wait < q+t:
             time_wait += 1
-        subscription_send(client,socket)
-        #crec que els time.sleep no funcionara perque enviara 
-        #el ack i es perdra, provar i modificar si fos el cas #borrar
-        time.sleep(time_wait)
+        data_recived = subscription_send(client,socket,time_wait)
+        
+        #tractar les dades
+        subscription_recived(client, data_recived)
+        
         count += 1
 
 #despres fer els estats
