@@ -7,27 +7,75 @@ import common
 from common import print_format
 from class_manager import Client, Element, SocketSetup, PDU
 
-#subscription
-def subscription_send(client:Client, socket:SocketSetup, time_wait:int):
+
+#Change state to client and print if it's a new state
+def change_state_client(client, state):
+    if client.get_current_state() != state:
+        client.set_current_state(state)
+        print_format(f"Controlador passa a l'estat: {client.get_current_state()}")
+
+def send_pdu_datagram(client:Client, socket:SocketSetup, typePdu:str, time_wait:int):
+    if common.debug:
+        print_format(f"send pdu type: {typePdu}",flag=2)
     datagram = PDU(**{
-        "typePdu" : "SUBS_REQ",
+        "typePdu" : typePdu,
         "client" : client
     })
     socket.sendto(datagram, timeout = time_wait)
-    data_recived = socket.recvData()    
-    return data_recived
+    data_recived = socket.recvData()
+    return data_recived, datagram
 
-def subscription_recived(client:Client, data_recived:bytes):
-    print(data_recived)
-    sys.exit()
+def read_pdu_datagram(data_recived:bytes):
+    if data_recived:
+        pdu_recv = PDU.pdu_from_datagram(data_recived)
+        pdu_kwargs = pdu_recv.get_attrs()
+        return pdu_kwargs
+    return {}
 
-    pass
+#Hello
+def keep_communication(client, socket):
+    v = 2
+    r = 2
+    s = 3
 
+    common.hello_thread = True
+    first = True
+    while common.hello_thread:
 
+        if  (
+            client.get_current_state() == "SEND_HELLO" or 
+            (first and client.get_current_state() == "SUBSCRIBED")
+        ):
+
+            data_recived_hello, hello_sended = send_pdu_datagram(client, socket, "HELLO", r)
+            pdu_kwargs = read_pdu_datagram(data_recived_hello)
+
+            if not pdu_kwargs:
+                s-=1
+                #Disconnect cause more than 3 datagrams were lost
+                if s <= 0:
+                    change_state_client(client,"NOT_SUBSCRIBED")
+            #Disconnect cause hello rejected
+            elif pdu_kwargs.get('pdu_type','') == "HELLO_REJ":
+                change_state_client(client,"NOT_SUBSCRIBED")
+            else:
+                if PDU.check_hello_recived(client, pdu_kwargs, hello_sended.get_attrs()):
+                    s = 3 #reset lost datagrams
+                    if first:
+                        change_state_client(client,"SEND_HELLO")
+                        first = False
+                else:
+                    #Disconnect cause data do not match
+                    send_pdu_datagram(client, socket, "HELLO_REJ", 1)
+                    change_state_client(client,"NOT_SUBSCRIBED")
+        else:
+            common.hello_thread = False
+            break
+        time.sleep(v)
+
+#Subscription
 def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int, n:int):
-    client.set_current_state("WAIT_ACK_SUBS")
-    print_format(f"Controlador passa a l'estat: {client.get_current_state()}")
-
+    
     count = 0
     time_wait = t
     while count < n:
@@ -39,14 +87,66 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
         #we increase 't' until we send 'p' packets up to reach 'q'
         if count >= p and time_wait < q+t:
             time_wait += 1
-        data_recived = subscription_send(client,socket,time_wait)
         
-        #tractar les dades
-        subscription_recived(client, data_recived)
-        
-        count += 1
+        change_state_client(client, "WAIT_ACK_SUBS")
+        data_recived_req, _ = send_pdu_datagram(client,socket,"SUBS_REQ", time_wait)
+        pdu_kwargs = read_pdu_datagram(data_recived_req)
 
-#despres fer els estats
+        # The client must act depending on the server's response
+        if pdu_kwargs.get('pdu_type','') == "SUBS_ACK":
+            #set new data to the client
+            new_udp_port = int(pdu_kwargs.get('port_udp',client.get_srvUDP()))
+            client.set_server_data(
+                pdu_kwargs.get('random_num',client.get_random_num()),
+                pdu_kwargs.get('mac',client.get_random_num()),
+                new_udp_port,
+            )
+            #new port for udp
+            socket.set_port(new_udp_port)
+
+            #send subs_info
+            change_state_client(client, "WAIT_ACK_INFO")
+            data_recived, _ = send_pdu_datagram(client,socket,"SUBS_INFO", t) #t = 1 sec
+            pdu_kwargs = read_pdu_datagram(data_recived)
+            
+            correct = False
+            if pdu_kwargs.get('pdu_type','') == "INFO_ACK":
+                #check data from info and set the new port to tcp
+                correct = client.check_info_ack_data(
+                    pdu_kwargs.get('random_num',client.get_random_num()),
+                    pdu_kwargs.get('mac',client.get_random_num()),
+                    int(pdu_kwargs.get('port_tcp',client.get_localTCP())),
+                )
+            
+            socket.set_port(client.get_srvUDP())
+            if correct:
+                change_state_client(client, "SUBSCRIBED")
+                return False
+
+        count+=1
+        pdu_type = pdu_kwargs.get('pdu_type','')
+        # Server denies and errors
+        if pdu_type in ["SUBS_NACK", "SUBS_REJ"]:
+            change_state_client(client, "NOT_SUBSCRIBED")
+            reason = pdu_kwargs.get('reason','')
+            print_format(f"Controlador ha rebut un paquet tipus {pdu_type} \nMotiu del servidor: {reason}")
+            if pdu_type == "SUBS_REJ":
+                print_format("El procediment tornarà a començar")
+                return True
+        #in case to recive a different pdu from expected
+        elif (
+                (pdu_type == "SUBS_ACK" and client.get_current_state == "WAIT_ACK_INFO") or
+                (pdu_type == "INFO_ACK" and client.get_current_state == "WAIT_ACK_SUBS") or
+                (pdu_type not in ["SUBS_ACK", "INFO_ACK",""])
+            ):
+            change_state_client(client, "NOT_SUBSCRIBED")
+            print_format(u"Controlador ha rebut un paquet diferent a l'esperat el procediment tornarà a començar")
+            return True
+    client.set_current_state("NOT_SUBSCRIBED")
+    return False
+        
+
+#Subscription
 def subscription_start(client:Client, socket:SocketSetup):
 
     MIN_PACKAGES = 3
@@ -69,17 +169,17 @@ def subscription_start(client:Client, socket:SocketSetup):
         print('----------------------')
 
     while client.get_current_state() == "NOT_SUBSCRIBED" and o > 0:
-
         print_format(f"Controlador en l'estat: {client.get_current_state()}, procés de subscripció: {MAX_SUBCRIPTIONS-o+1}")
-        subscription_process(client,socket,t,p,q,n)
-        o-=1
+        restart = subscription_process(client,socket,t,p,q,n)
+        if restart:
+            o = MAX_SUBCRIPTIONS 
+        else:
+            o-=1
         
-        client.set_current_state("NOT_SUBSCRIBED")
-        print_format(f"Controlador passa a l'estat: {client.get_current_state()}")
-        #Aqui igual que adalt #borrar
-        time.sleep(u) #wait u sec to try again
+        if client.get_current_state() != "SUBSCRIBED":
+            time.sleep(u) #wait u sec to try again
 
-
+    return client.get_current_state() == "SUBSCRIBED", MAX_SUBCRIPTIONS
 #Load config client file
 def load_config_file():
     #Check if file exists

@@ -10,27 +10,36 @@ DEFAULT_CONFIG_CLIENT = "client.cfg"
 #--------- VALUES ---------
 debug = False
 config_client = os.path.join(CONFIG_PATH, DEFAULT_CONFIG_CLIENT)
+hello_thread = True
+run_main = True
 
 # --------- MAPPING ---------
 
 #UDP DATAGRAM
-#PACKAGE TYPES SUBSCRIPTION PHASE
-PACKAGE_TYPE_SUB = {
+
+#Hello Data
+#PACKAGE TYPES UDP
+PACKAGE_TYPE_UDP = {
     0x00: "SUBS_REQ",  #Petició de subscripció
     0x01: "SUBS_ACK",  #Acceptació de paquet de subscripció
     0x02: "SUBS_REJ",  #Rebuig de subscripció
     0x03: "SUBS_INFO", #Paquet addicional de subscripció
     0x04: "INFO_ACK",  #Acceptació del paquet addicional de subscripció
     0x05: "SUBS_NACK", #Error de subscripció
+    0x10: "HELLO",
+    0x11: "HELLO_REJ"
+
 }
 
-PACKAGE_TYPE_SUB_REVERSE = {
+PACKAGE_TYPE_UDP_REVERSE = {
     "SUBS_REQ"  : 0x00,   #Petició de subscripció
     "SUBS_ACK"  : 0x01,   #Acceptació de paquet de subscripció
     "SUBS_REJ"  : 0x02,   #Rebuig de subscripció
     "SUBS_INFO" : 0x03,   #Paquet addicional de subscripció
     "INFO_ACK"  : 0x04,   #Acceptació del paquet addicional de subscripció
     "SUBS_NACK" : 0x05,   #Error de subscripció
+    "HELLO"     : 0x10,
+    "HELLO_REJ" : 0x11
 }
 
 CLIENT_STATES = {
@@ -85,3 +94,8 @@ COMMAND_ARGUMENTS = {
         "_func" : arguments_d
     }
 }
+
+#-------------------------#
+COMMANDS = [
+    "quit"
+]
