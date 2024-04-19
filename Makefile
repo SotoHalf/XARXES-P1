@@ -18,7 +18,7 @@ build_client:
 	cp -r $(CLIENT_PATH) .
 
 build_server:
-	gcc $(SERVER_PATH) -o server -Wall
+	gcc $(SERVER_PATH) -o server -Wall -std=c99 -pedantic
 
 build_client_one:
 	#Creates an executable of client.py and its modules in a single file

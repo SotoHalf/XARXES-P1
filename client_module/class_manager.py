@@ -142,6 +142,7 @@ class PDU: #UDP DATAGRAM
     def pdu_from_datagram(data_recived):
 
         if data_recived:
+
             type_packet = common.PACKAGE_TYPE_UDP.get(data_recived[0],None)
             if type_packet:
                 return PDU(**{
@@ -169,28 +170,28 @@ class PDU: #UDP DATAGRAM
             self.data = f"{client.get_name()},{client.get_situation()}"
         else:
             packet = kwargs.get("packet", None)
-            self.mac = PDU.decode_bytes(packet,1,14) 
-            self.random_num = PDU.decode_bytes(packet,14,23)
-            self.data = PDU.decode_bytes(packet,23,103)   #Doc says Ip and then at the bottom port UDP
+            self.mac = PDU.decode_bytes(packet,1,13) 
+            self.random_num = PDU.decode_bytes(packet,13,22)
+            self.data = PDU.decode_bytes(packet,22,102)   #Doc says Ip and then at the bottom port UDP
 
 
     def setup_subs_ack(self,**kwargs):
         packet = kwargs.get("packet", None)
-        self.mac = PDU.decode_bytes(packet,1,14) 
-        self.random_num = PDU.decode_bytes(packet,14,23)
-        self.port_udp = PDU.decode_bytes(packet,23,103)   #Doc says Ip and then at the bottom port UDP
+        self.mac = PDU.decode_bytes(packet,1,13) 
+        self.random_num = PDU.decode_bytes(packet,13,22)
+        self.port_udp = PDU.decode_bytes(packet,22,102)   #Doc says Ip and then at the bottom port UDP
         
     def setup_subs_rej(self,**kwargs):
         packet = kwargs.get("packet", None)
-        self.mac = PDU.decode_bytes(packet,1,14) 
-        self.random_num = PDU.decode_bytes(packet,14,23)
-        self.reason = PDU.decode_bytes(packet,23,103)
+        self.mac = PDU.decode_bytes(packet,1,13) 
+        self.random_num = PDU.decode_bytes(packet,13,22)
+        self.reason = PDU.decode_bytes(packet,22,102)
 
     def setup_info_ack(self,**kwargs):
         packet = kwargs.get("packet", None)
-        self.mac = PDU.decode_bytes(packet,1,14) 
-        self.random_num = PDU.decode_bytes(packet,14,23)
-        self.port_tcp = PDU.decode_bytes(packet,23,103)
+        self.mac = PDU.decode_bytes(packet,1,13) 
+        self.random_num = PDU.decode_bytes(packet,14,22)
+        self.port_tcp = PDU.decode_bytes(packet,22,102)
         
     def setup_subs_nack(self,**kwargs):
         self.reason = "ERROR NACK"
@@ -267,7 +268,7 @@ class PDU: #UDP DATAGRAM
 
     #set the correct format of a package, max n fill left with missing n
     def encode_bytes(s,n):
-        return s.encode()[:n].ljust(n, b'\x00')
+        return s.encode()[:n]#.ljust(n, b'\x00')
 
     def decode_bytes(s,ini,fin):
         return s[ini:fin].decode('utf-8').rstrip('\x00')
@@ -331,6 +332,7 @@ class SocketSetup:
         if self.connected:
             self.sock.settimeout(timeout)
             packet = pdu.get_packet()
+
             if self.sock_type == SocketType.UDP:
                 self.sock.sendto(packet, (self.destination, self.port))
             elif self.sock_type == SocketType.TCP:

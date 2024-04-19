@@ -120,8 +120,9 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
                     pdu_kwargs.get('mac',client.get_random_num()),
                     int(pdu_kwargs.get('port_tcp',client.get_localTCP())),
                 )
-            
-            socket.set_port(client.get_srvUDP())
+            #set again old port
+            #socket.set_port(client.get_srvUDP())
+                
             if correct:
                 change_state_client(client, "SUBSCRIBED")
                 return False

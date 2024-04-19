@@ -2,11 +2,11 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include "util_functions.h"
 #include "data_structures.h"
 #include "util_functions.h"
-
-
 
 void print_format(int type, const char *s) {
     const char *type_str;
@@ -31,6 +31,146 @@ void print_format(int type, const char *s) {
     printf("%s: %s => %s\n", time_str, type_str, s);
 }
 
+
+// check SUB_REQ package
+int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controllers) {
+    
+    char mac_to_check[MAC_ADDRESS_LENGTH];
+    char name_to_check[9];
+    //jump first byte cause it's the type
+    strncpy(mac_to_check, buffer + 1, MAC_ADDRESS_LENGTH - 1);
+    //Name is before a ',' so read until reach one
+    int i = 0;
+    int total_bytes = MAC_ADDRESS_LENGTH + RANDOM_NUM_LENGTH - 1;  //number of readed bytes
+    while (buffer[total_bytes + i] != ',' && i < 8) {
+        name_to_check[i] = buffer[total_bytes + i];
+        i++;
+    }
+    mac_to_check[MAC_ADDRESS_LENGTH - 1] = '\0';
+    name_to_check[i] = '\0';
+
+    // check if the mac and name match any controller
+    for (int i = 0; i < num_controllers; i++) {
+        if (strcmp(mac_to_check, controllers[i].mac) == 0 && strcmp(name_to_check, controllers[i].name) == 0) {
+            //valid SUB_REQ
+            return 1;
+        }
+    }
+
+    //invalid SUB_REQ
+    return 0;
+}
+
+
+
+//Method for test the creation of packages
+void print_pdu_subs_rej(char *sub_rej) {
+    for (int i = 0; i < MAX_UDP_MESSAGE_SIZE; i++) {
+        printf("%02X ", (unsigned char)sub_rej[i]);
+    }
+    printf("\n");
+}
+
+
+// create SUBS_REJ package
+char *create_pdu_subs_rej(ServerConfig server_config) {
+    char *sub_rej = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    // Type
+    sub_rej[0] = 0x02;
+    
+    //MAC Address
+    int total_bytes = 1;
+    memcpy(sub_rej + total_bytes, server_config.mac, MAC_ADDRESS_LENGTH - 1); //remove /0 with -1
+
+    //Random number
+    char *r_num = "000000000";
+    total_bytes += MAC_ADDRESS_LENGTH - 1;
+    memcpy(sub_rej + total_bytes, r_num, RANDOM_NUM_LENGTH);
+
+    //Reason
+    char reason[REASON_LENGTH] = "Rebuig de subscripció dades incorrectes";
+    total_bytes += RANDOM_NUM_LENGTH;
+    memcpy(sub_rej + total_bytes, reason, REASON_LENGTH);
+
+    return sub_rej;
+
+}
+
+
+
+PackageTypeUDP get_type_package(char *buffer) {
+    //check first byte and retorn the type of the datagram
+    switch (buffer[0]) {
+        case 0x00: return SUBS_REQ;
+        case 0x01: return SUBS_ACK;
+        case 0x02: return SUBS_REJ;
+        case 0x03: return SUBS_INFO;
+        case 0x04: return INFO_ACK;
+        case 0x05: return SUBS_NACK;
+        case 0x10: return HELLO;
+        case 0x11: return HELLO_REJ;
+        default: return ERROR_UDP;
+    }
+}
+
+int create_udp_socket(int port) {
+    int udp_socket;
+
+    // UDP 
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_socket == -1) {
+        print_format(3,"No ha sigut possible crear un socket UDP");
+        exit(1);
+    }
+
+    // Server address structure
+    struct sockaddr_in addr_server;
+    memset(&addr_server, 0, sizeof(addr_server));
+    addr_server.sin_family = AF_INET;
+    addr_server.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr_server.sin_port = htons(port);
+
+    // Bind socket to the server address
+    if (bind(udp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
+        print_format(3,"No ha sigut possible fer un bind del socket UDP");
+        exit(1);
+    }
+
+    return udp_socket;
+}
+
+// Function to create a TCP socket
+int create_tcp_socket(int port) {
+    int tcp_socket;
+
+    // Create TCP socket
+    tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (tcp_socket == -1) {
+        print_format(3,"No ha sigut possible crear un socket TCP");
+        exit(1);
+    }
+
+    // Prepare server address structure
+    struct sockaddr_in addr_server;
+    memset(&addr_server, 0, sizeof(addr_server));
+    addr_server.sin_family = AF_INET;
+    addr_server.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr_server.sin_port = htons(port);
+
+    // Bind socket to the server address
+    if (bind(tcp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
+        print_format(3,"No ha sigut possible fer un bind del socket TCP");
+        exit(1);
+    }
+
+    // Queue wait | Max 5 connections
+    if (listen(tcp_socket, 5) == -1) {
+        print_format(3,"No ha sigut possible fer un listen del socket TCP");
+        exit(1);
+    }
+
+    return tcp_socket;
+}
 
 // Print ServerConfig (test)
 void print_server_config(ServerConfig *server_config) {
@@ -92,6 +232,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
         //%[^,] stop reading when reaching a ,
         //also then %s read string after ,
         fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
+        (*controllers)[i].state = 0; //disconnected
     }
 
     fclose(file);
@@ -100,7 +241,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
 }
 
 
-void initialize_server(ProgramArgs *args, ServerConfig *server_config, ControllerInfo **controllers) {
+void load_server_files(ProgramArgs *args, ServerConfig *server_config, ControllerInfo **controllers) {
     //Get config path
     char file_path[100];
     strcpy(file_path, CONFIG_PATH);
