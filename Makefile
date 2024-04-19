@@ -3,14 +3,22 @@
 CLIENT_PATH := ./client_module/* 
 CLIENT_FILE := ./client_module/client.py
 
-.PHONY: build_client clean_client
+SERVER_PATH := ./server_module/*
+SERVER_FILE := ./server_module/server.c
 
-build: build_client
+.PHONY: build_client build_server clean clean_client
 
-build_one_file: build_client_one clean_client
+build: build_client build_server
+
+build_one_file: build_client_one clean_client build_server
+
+clean: clean_py_files clean_c_files clean_py_one_file
 
 build_client:
 	cp -r $(CLIENT_PATH) .
+
+build_server:
+	gcc $(SERVER_PATH) -o server -Wall
 
 build_client_one:
 	#Creates an executable of client.py and its modules in a single file
@@ -29,5 +37,13 @@ clean_client:
 
 clean_py_files:
 	# Delete .py files
-	rm *.py
+	rm -rf *.py
 	rm -rf __pycache__
+
+clean_py_one_file:
+	# Delete client files
+	rm -rf client
+
+clean_c_files:
+	# Delete server files
+	rm -rf server
