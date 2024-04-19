@@ -11,7 +11,9 @@ DEFAULT_CONFIG_CLIENT = "client.cfg"
 debug = False
 config_client = os.path.join(CONFIG_PATH, DEFAULT_CONFIG_CLIENT)
 hello_thread = True
+command_thread = True
 run_main = True
+
 
 # --------- MAPPING ---------
 
@@ -97,5 +99,8 @@ COMMAND_ARGUMENTS = {
 
 #-------------------------#
 COMMANDS = [
-    "quit"
+    "quit",
+    "stat",
+    "set",
+    "send"
 ]

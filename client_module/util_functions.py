@@ -7,13 +7,13 @@ import common
 from common import print_format
 from class_manager import Client, Element, SocketSetup, PDU
 
-
 #Change state to client and print if it's a new state
-def change_state_client(client, state):
+def change_state_client(client, state, reason = ""):
     if client.get_current_state() != state:
         client.set_current_state(state)
-        print_format(f"Controlador passa a l'estat: {client.get_current_state()}")
+        print_format(f"Controlador passa a l'estat: {client.get_current_state()} {reason}")
 
+#Creates a pdu objects and send it
 def send_pdu_datagram(client:Client, socket:SocketSetup, typePdu:str, time_wait:int):
     if common.debug:
         print_format(f"send pdu type: {typePdu}",flag=2)
@@ -22,9 +22,10 @@ def send_pdu_datagram(client:Client, socket:SocketSetup, typePdu:str, time_wait:
         "client" : client
     })
     socket.sendto(datagram, timeout = time_wait)
-    data_recived = socket.recvData()
+    data_recived = socket.recvData() #get response from the server
     return data_recived, datagram
 
+#Create a pdu objects using the response from the server
 def read_pdu_datagram(data_recived:bytes):
     if data_recived:
         pdu_recv = PDU.pdu_from_datagram(data_recived)
@@ -32,7 +33,7 @@ def read_pdu_datagram(data_recived:bytes):
         return pdu_kwargs
     return {}
 
-#Hello
+#Hello thread method
 def keep_communication(client, socket):
     v = 2
     r = 2
@@ -45,19 +46,20 @@ def keep_communication(client, socket):
         if  (
             client.get_current_state() == "SEND_HELLO" or 
             (first and client.get_current_state() == "SUBSCRIBED")
-        ):
+        ): #Valid states to keep the hello communication
 
-            data_recived_hello, hello_sended = send_pdu_datagram(client, socket, "HELLO", r)
-            pdu_kwargs = read_pdu_datagram(data_recived_hello)
+            data_recived_hello, hello_sended = send_pdu_datagram(client, socket, "HELLO", r) #send hello
+            pdu_kwargs = read_pdu_datagram(data_recived_hello) #read hello response
 
             if not pdu_kwargs:
                 s-=1
                 #Disconnect cause more than 3 datagrams were lost
                 if s <= 0:
-                    change_state_client(client,"NOT_SUBSCRIBED")
+                    change_state_client(client,"DISCONNECTED", reason = "(Sense resposta a 3 ALIVES)")
+
             #Disconnect cause hello rejected
             elif pdu_kwargs.get('pdu_type','') == "HELLO_REJ":
-                change_state_client(client,"NOT_SUBSCRIBED")
+                change_state_client(client,"DISCONNECTED", reason = "(HELLO_REJ rebut)")
             else:
                 if PDU.check_hello_recived(client, pdu_kwargs, hello_sended.get_attrs()):
                     s = 3 #reset lost datagrams
@@ -67,7 +69,8 @@ def keep_communication(client, socket):
                 else:
                     #Disconnect cause data do not match
                     send_pdu_datagram(client, socket, "HELLO_REJ", 1)
-                    change_state_client(client,"NOT_SUBSCRIBED")
+                    change_state_client(client,"DISCONNECTED", reason = "(Suplantació d'identitat detectada)")
+
         else:
             common.hello_thread = False
             break
@@ -149,8 +152,8 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
 #Subscription
 def subscription_start(client:Client, socket:SocketSetup):
 
-    MIN_PACKAGES = 3
-    MAX_PACKAGES = 5
+    MIN_PACKAGES = 1
+    MAX_PACKAGES = 3
     MIN_RESTART = 1
     MAX_RESTART = 3
     MAX_SUBCRIPTIONS = 3

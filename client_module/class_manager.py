@@ -7,8 +7,13 @@ class Element:
         self.magnitud = kwargs.get("magnitud", None)
         self.ordinal = kwargs.get("ordinal", None)
         self.typeIo = kwargs.get("typeIo", None)
+        self.value = None
+    
+    def set_value(self, value):
+        self.value = value
+
     def __str__(self):
-        return f"{self.magnitud}-{self.ordinal}-{self.typeIo}"
+        return f"{self.magnitud}-{self.ordinal}-{self.typeIo}\t {self.value}"
 
 class Client:
     def __init__(self, **kwargs):
@@ -69,6 +74,22 @@ class Client:
 
     def get_random_num(self):
         return self.random_num
+    
+
+    def get_stat(self):
+        elements_str = "\n".join([str(x) for x in self.elements])
+        return f"""
+******************** DADES CONTROLADOR *********************
+MAC: {self.get_mac()}, Nom: {self.get_name()}, Situació: {self.get_situation()} 
+
+Estat: {self.get_current_state()}
+
+    Dispos.    valor
+    -------    ------
+{elements_str}
+
+************************************************************
+"""
     
     def __str__(self):
         return f"""
@@ -273,43 +294,66 @@ class SocketSetup:
         self.sock = None
         self.sock_type = sock_type
         self.destination = client.server
+        self.connected = False
 
         if self.sock_type == SocketType.UDP:
             self.port = client.get_srvUDP()
             self.setup_udp()
         elif self.sock_type == SocketType.TCP:
-            self.port = client.client.get_localTCP()
+            self.port = client.get_localTCP()
             self.setup_tcp()
         else:
             self.port = None
 
+    def get_connected(self):
+        return self.connected
+    
+    def get_port(self):
+        return self.port
+
     def setup_udp(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.connected = True
+    
+    def setup_tcp(self):
+        try:
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.sock.connect((self.destination, self.port)) 
+            self.connected = True
+        except ConnectionRefusedError:
+            self.connected = False
+            
 
     def set_port(self,port:int):
         self.port = port
 
     def sendto(self, pdu: PDU, timeout = 1):
-        self.sock.settimeout(timeout)
-        packet = pdu.get_packet()
-        self.sock.sendto(packet,(self.destination, self.port))
+        if self.connected:
+            self.sock.settimeout(timeout)
+            packet = pdu.get_packet()
+            if self.sock_type == SocketType.UDP:
+                self.sock.sendto(packet, (self.destination, self.port))
+            elif self.sock_type == SocketType.TCP:
+                self.sock.sendall(packet)
+        else:
+            if self.sock_type == SocketType.UDP:
+                self.setup_udp()
+            elif self.sock_type == SocketType.TCP:
+                self.setup_udp()
+
 
     def recvData(self):
-        #Millor si no es none mirar avam que retorna en cas de fall
         recived_data = None
         try:
             if self.sock_type == SocketType.UDP:
                 recived_data = self.sock.recv(SocketSetup.BufferSizeRecv)
             elif self.sock_type == SocketType.TCP:
-                pass
+                recived_data = self.sock.recv(SocketSetup.BufferSizeRecv)
         except socket.timeout:
             pass
 
         return recived_data
     
-    def setup_tcp(self):
-        pass
-
     def close(self):
         self.sock.close()
 
