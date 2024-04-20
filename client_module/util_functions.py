@@ -7,6 +7,13 @@ import common
 from common import print_format
 from class_manager import Client, Element, SocketSetup, PDU
 
+
+
+def disconnect_client_values(client, socket):
+    #set again old port
+    socket.set_port(client.get_srvUDP())
+    client.set_random_num("00000000")
+
 #Change state to client and print if it's a new state
 def change_state_client(client, state, reason = ""):
     if client.get_current_state() != state:
@@ -55,13 +62,15 @@ def keep_communication(client, socket):
                 s-=1
                 #Disconnect cause more than 3 datagrams were lost
                 if s <= 0:
+                    disconnect_client_values(client, socket)
                     change_state_client(client,"DISCONNECTED", reason = "(Sense resposta a 3 ALIVES)")
 
             #Disconnect cause hello rejected
             elif pdu_kwargs.get('pdu_type','') == "HELLO_REJ":
+                disconnect_client_values(client, socket)
                 change_state_client(client,"DISCONNECTED", reason = "(HELLO_REJ rebut)")
             else:
-                if PDU.check_hello_recived(client, pdu_kwargs, hello_sended.get_attrs()):
+                if PDU.check_hello_recived(client, pdu_kwargs, hello_sended.get_attrs()): #correct keep connection
                     s = 3 #reset lost datagrams
                     if first:
                         change_state_client(client,"SEND_HELLO")
@@ -69,6 +78,7 @@ def keep_communication(client, socket):
                 else:
                     #Disconnect cause data do not match
                     send_pdu_datagram(client, socket, "HELLO_REJ", 1)
+                    disconnect_client_values(client, socket)
                     change_state_client(client,"DISCONNECTED", reason = "(Suplantació d'identitat detectada)")
 
         else:
@@ -120,12 +130,13 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
                     pdu_kwargs.get('mac',client.get_random_num()),
                     int(pdu_kwargs.get('port_tcp',client.get_localTCP())),
                 )
-            #set again old port
-            #socket.set_port(client.get_srvUDP())
-                
+            
             if correct:
                 change_state_client(client, "SUBSCRIBED")
                 return False
+
+            #set again old port
+            disconnect_client_values(client, socket)
 
         count+=1
         pdu_type = pdu_kwargs.get('pdu_type','')

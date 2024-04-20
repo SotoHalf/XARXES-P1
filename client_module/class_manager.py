@@ -12,8 +12,11 @@ class Element:
     def set_value(self, value):
         self.value = value
 
-    def __str__(self):
+    def get_stat(self):
         return f"{self.magnitud}-{self.ordinal}-{self.typeIo}\t {self.value}"
+
+    def __str__(self):
+        return f"{self.magnitud}-{self.ordinal}-{self.typeIo}"
 
 class Client:
     def __init__(self, **kwargs):
@@ -75,9 +78,12 @@ class Client:
     def get_random_num(self):
         return self.random_num
     
+    def set_random_num(self, num):
+        self.random_num = num
+    
 
     def get_stat(self):
-        elements_str = "\n".join([str(x) for x in self.elements])
+        elements_str = "\n".join([x.get_stat() for x in self.elements])
         return f"""
 ******************** DADES CONTROLADOR *********************
 MAC: {self.get_mac()}, Nom: {self.get_name()}, Situació: {self.get_situation()} 
@@ -142,8 +148,10 @@ class PDU: #UDP DATAGRAM
     def pdu_from_datagram(data_recived):
 
         if data_recived:
-
+            #test
+            print(data_recived)
             type_packet = common.PACKAGE_TYPE_UDP.get(data_recived[0],None)
+            print(type_packet)
             if type_packet:
                 return PDU(**{
                     "typePdu": type_packet,
@@ -334,6 +342,8 @@ class SocketSetup:
             packet = pdu.get_packet()
 
             if self.sock_type == SocketType.UDP:
+                print(f"port enviat {self.port}")
+                print(f"{packet}")
                 self.sock.sendto(packet, (self.destination, self.port))
             elif self.sock_type == SocketType.TCP:
                 self.sock.sendall(packet)

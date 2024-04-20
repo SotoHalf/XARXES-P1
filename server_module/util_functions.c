@@ -4,6 +4,7 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <time.h>
 #include "util_functions.h"
 #include "data_structures.h"
 #include "util_functions.h"
@@ -31,12 +32,25 @@ void print_format(int type, const char *s) {
     printf("%s: %s => %s\n", time_str, type_str, s);
 }
 
+void disconnect_controller(ControllerInfo controller){
+    controller.state=DISCONNECTED;
+    strcpy(controller.random_num, "00000000");
+}
+
+
+int assign_udp_port() {
+    srand(time(NULL));
+    int udp_port = rand() % (MAX_UDP_PORT - MIN_UDP_PORT + 1) + MIN_UDP_PORT;
+    return udp_port;
+}
+
 
 // check SUB_REQ package
 int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controllers) {
     
     char mac_to_check[MAC_ADDRESS_LENGTH];
     char name_to_check[9];
+
     //jump first byte cause it's the type
     strncpy(mac_to_check, buffer + 1, MAC_ADDRESS_LENGTH - 1);
     //Name is before a ',' so read until reach one
@@ -53,24 +67,52 @@ int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controll
     for (int i = 0; i < num_controllers; i++) {
         if (strcmp(mac_to_check, controllers[i].mac) == 0 && strcmp(name_to_check, controllers[i].name) == 0) {
             //valid SUB_REQ
-            return 1;
+            return i;
         }
     }
 
     //invalid SUB_REQ
-    return 0;
+    return -1;
 }
 
 
 
 //Method for test the creation of packages
-void print_pdu_subs_rej(char *sub_rej) {
+void print_pdu_test(char *pack) {
     for (int i = 0; i < MAX_UDP_MESSAGE_SIZE; i++) {
-        printf("%02X ", (unsigned char)sub_rej[i]);
+        printf("%02X ", (unsigned char)pack[i]);
     }
     printf("\n");
 }
 
+
+//Create SUBS_ACK
+char *create_pdu_subs_ack(ServerConfig server_config, ControllerInfo controller){
+    char *sub_ack = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    // Type
+    sub_ack[0] = 0x01;
+    
+    //MAC Address
+    int total_bytes = 1;
+    memcpy(sub_ack + total_bytes, server_config.mac, MAC_ADDRESS_LENGTH - 1); //remove /0 with -1
+
+    //Random number
+    char *r_num = controller.random_num;
+    total_bytes += MAC_ADDRESS_LENGTH - 1;
+    memcpy(sub_ack + total_bytes, r_num, RANDOM_NUM_LENGTH);
+
+    //PortUdp
+    char new_port_udp[PORTUDP_LENGTH];
+    //sprintf(new_port_udp, "%05d", controller.udp_port);
+    snprintf(new_port_udp, PORTUDP_LENGTH, "%d", controller.udp_port);
+
+    total_bytes += RANDOM_NUM_LENGTH;
+    memcpy(sub_ack + total_bytes, new_port_udp, PORTUDP_LENGTH);
+
+    print_pdu_test(sub_ack);
+
+    return sub_ack;
+}
 
 // create SUBS_REJ package
 char *create_pdu_subs_rej(ServerConfig server_config) {
@@ -84,19 +126,29 @@ char *create_pdu_subs_rej(ServerConfig server_config) {
 
     //Random number
     char *r_num = "000000000";
+
     total_bytes += MAC_ADDRESS_LENGTH - 1;
     memcpy(sub_rej + total_bytes, r_num, RANDOM_NUM_LENGTH);
 
     //Reason
-    char reason[REASON_LENGTH] = "Rebuig de subscripció dades incorrectes";
+    char reason[DATA_UDP_LENGTH] = "Rebuig de subscripció dades incorrectes";
     total_bytes += RANDOM_NUM_LENGTH;
-    memcpy(sub_rej + total_bytes, reason, REASON_LENGTH);
+    memcpy(sub_rej + total_bytes, reason, DATA_UDP_LENGTH);
 
     return sub_rej;
-
 }
 
+//random num for clients
+char *generate_random_number() {
+    srand(time(NULL));
+    int random_num = rand() % 1000000000;
+    char *random_str = (char *)malloc((RANDOM_NUM_LENGTH + 1) * sizeof(char));
 
+    //pass num to str only 9 digits
+    sprintf(random_str, "%09d", random_num);
+
+    return random_str;
+}
 
 PackageTypeUDP get_type_package(char *buffer) {
     //check first byte and retorn the type of the datagram
@@ -132,8 +184,9 @@ int create_udp_socket(int port) {
 
     // Bind socket to the server address
     if (bind(udp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
-        print_format(3,"No ha sigut possible fer un bind del socket UDP");
-        exit(1);
+        //print_format(3,"No ha sigut possible fer un bind del socket UDP");
+        //exit(1);
+        return -1;
     }
 
     return udp_socket;
@@ -195,7 +248,7 @@ void read_server_file(const char *filename, ServerConfig *server_config) {
     if (file == NULL) {
         char error_message[100] = "No es pot obrir l'arxiu de configuració:";
         strcat(error_message, filename);
-        print_format(2, error_message);
+        print_format(3, error_message);
         exit(1);
     }
 
@@ -212,7 +265,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
     // Open the file
     FILE *file = fopen(filename, "r");
     if (file == NULL) {
-        print_format(2, "No es pot obrir la base de dades de controladors");
+        print_format(3, "No es pot obrir la base de dades de controladors");
         exit(1);
     }
 
@@ -232,7 +285,8 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
         //%[^,] stop reading when reaching a ,
         //also then %s read string after ,
         fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
-        (*controllers)[i].state = 0; //disconnected
+        (*controllers)[i].state = DISCONNECTED; //disconnected
+        strcpy((*controllers)[i].random_num, "00000000"); // set the random num 
     }
 
     fclose(file);

@@ -42,7 +42,6 @@ int main(int argc, char *argv[]) {
     
     //MAIN LOOP SUBSCRIPTION
     while (1) {
-        
         //UDP
         struct sockaddr_in client_addr;
         socklen_t addr_len = sizeof(client_addr);
@@ -58,16 +57,59 @@ int main(int argc, char *argv[]) {
         int type_package = get_type_package(buffer);
 
         if (type_package == SUBS_REQ) {
-            if (validate_sub_req(buffer, controllers, server_config.num_controllers)) {
-                pid_t pid = fork();
-                if (pid == -1) {
-                    continue;
-                } else if (pid == 0) { //child
-                    //seguira con el keep comunication
-                    exit(0);
-                } else {
-                    // Parent
-                    print_format(1,"Es valid");
+            int controller_pos = validate_sub_req(buffer, controllers, server_config.num_controllers);
+            //check if controller exists
+            if (controller_pos != -1) {
+                ControllerInfo controller = controllers[controller_pos];
+
+                if (controller.state == DISCONNECTED){
+                    controller.state=WAIT_ACK_INFO;
+                    strcpy(controller.random_num, generate_random_number());
+
+                    //Assign a new UDP port for the controller
+                    int controller_udp_socket = -1;
+                    while (controller_udp_socket == -1){
+                        controller.udp_port = assign_udp_port();
+                        controller_udp_socket = create_udp_socket(controller.udp_port);
+                    }
+                    printf("%d\n",controller.udp_port);
+
+                    //valid send subs_ack
+                    char *sub_ack = create_pdu_subs_ack(server_config, controller);
+                    sendto(udp_socket, sub_ack, strlen(sub_ack), 0,
+                        (struct sockaddr *)&client_addr, addr_len);
+                    
+                    //modificar aquet print
+                    print_format(1,"Controlador pasa a l'estat WAIT_ACK_INFO");
+                    if (args.debug){
+                        print_format(2,"Creació d'un subprocés (FORK)");
+                    }
+                    pid_t pid = fork();
+                    if (pid == -1) { //error
+                        continue;
+                    } else if (pid == 0) { //child
+                        
+                        //SUBS_INFO -> Recived
+                        char info_buffer[MAX_UDP_MESSAGE_SIZE];
+                        int info_bytes_received = recvfrom(controller_udp_socket, info_buffer, sizeof(info_buffer), 0, (struct sockaddr *)&client_addr, &addr_len);
+                        if (info_bytes_received == -1) {
+                            //ERROR RECIVED
+                            continue;
+                        }
+                        printf("Received SUBS_INFO package content: %s\n", info_buffer);
+
+                        //valid send info_ack
+
+                        //keep comunication hello
+                        //When the client is disconnected we must terminate the socket that we opened previously    
+                        disconnect_controller(controller);
+                        close(controller_udp_socket);
+                        exit(0);
+                    } else {
+                        // Parent
+                        print_format(1,"Es valid"); //modificar el print
+                        wait(NULL); // no se si el haure de treure al fer un bucle infinit sobre el fill
+                    }
                 }
                 
             } else {

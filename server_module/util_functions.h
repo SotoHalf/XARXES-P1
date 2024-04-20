@@ -14,5 +14,9 @@ int create_tcp_socket(int port);
 int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controllers);
 char *create_pdu_subs_rej(ServerConfig server_config);
 PackageTypeUDP get_type_package(char *buffer);
+char *generate_random_number();
+char *create_pdu_subs_ack(ServerConfig server_config, ControllerInfo controller);
+int assign_udp_port();
+void disconnect_controller(ControllerInfo controller);
 
 #endif

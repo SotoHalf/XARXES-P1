@@ -6,8 +6,15 @@
 #define CONTROLLERS_FILE_DEFAULT "controllers.dat"
 #define MAC_ADDRESS_LENGTH 13 
 #define RANDOM_NUM_LENGTH 9
-#define REASON_LENGTH 80
+#define NAME_LENGTH 9
+#define DATA_UDP_LENGTH 80
+#define PORTUDP_LENGTH 6
 #define MAX_UDP_MESSAGE_SIZE 118 //Max UDP packet
+
+#define MAX_UDP_PORT 40000 
+#define MIN_UDP_PORT 50000 //10k ports for udp
+#define MAX_TCP_PORT 50001
+#define MIN_TCP_PORT 60000 //10k ports for tcp
 
 typedef struct {
     char name[9];   // Server Name
@@ -17,10 +24,23 @@ typedef struct {
     int num_controllers;
 } ServerConfig;
 
+typedef enum {
+    DISCONNECTED,
+    NOT_SUBSCRIBED,
+    WAIT_ACK_SUBS,
+    WAIT_INFO,
+    WAIT_ACK_INFO,
+    SUBSCRIBED,
+    SEND_HELLO,
+    ERORR_STATE
+} ClientStates;
+
 typedef struct {
-    char name[9]; // Controller /client Name
+    char name[NAME_LENGTH]; // Controller /client Name
     char mac[MAC_ADDRESS_LENGTH]; // MAC /client 
-    int state;
+    char random_num[RANDOM_NUM_LENGTH]; //random number
+    int udp_port; //udp port for the client
+    ClientStates state;
 } ControllerInfo;
 
 // Structure for arguments
