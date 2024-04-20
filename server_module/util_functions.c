@@ -44,23 +44,147 @@ int assign_udp_port() {
     return udp_port;
 }
 
+//Method for test the controller
+void print_controller_info(ControllerInfo controller) {
+    printf("Controller Info:\n");
+    printf("MAC Address: %s\n", controller.mac);
+    printf("Random Number: %s\n", controller.random_num);
+    printf("TCP Port: %d\n", controller.tcp_port);
+    printf("Elements Data: %s\n", controller.elements_data);
+}
+
+//Method for test the creation of packages
+void print_pdu_test(char *pack) {
+    for (int i = 0; i < MAX_UDP_MESSAGE_SIZE; i++) {
+        printf("%02X ", (unsigned char)pack[i]);
+    }
+    printf("\n");
+}
+
+//Method for test the values
+void print_val(char *val, int limit) {
+    for (int i = 0; i < limit; i++) {
+        printf("%d%c\n", i,val[i]);
+    }
+    printf("\n");
+}
+
+void fill_empty_to_buffer(char *buffer, int initial) {
+    for (int i = initial; i < MAX_UDP_MESSAGE_SIZE; i++) {
+        buffer[i] = '\0';
+    }
+}
+
+void write_to_buffer(char *buffer, char *value, int initial, int final) {
+    int value_length = final - initial;
+    for (int i = 0; i < value_length; i++) {
+        if (i < strlen(value)) {
+            buffer[initial + i] = value[i];
+        } else {
+            buffer[initial + i] = '\0';
+        }
+    }
+}
+
+/*
+void read_from_buffer(char *buffer, int initial, int final, char *res) {
+    //char *res = (char *)malloc(final);
+    int i = 0;
+    for (i = 0; i < final; i++) {
+        res[i] = buffer[initial + i];
+    }
+    res[i] = '\0';
+    //return res;
+}
+*/
+
+char *read_from_buffer(char *buffer, int initial, int final) {
+    char *res = (char *)malloc(final);
+    int i = 0;
+    for (i = 0; i < final; i++) {
+        res[i] = buffer[initial + i];
+    }
+    res[i] = '\0';
+    return res;
+}
+
+
+// check INFO_ACK
+int validate_sub_info(char *buffer, ControllerInfo controller){
+
+    int total_bytes = 1; //already writen
+    //char mac_to_check[MAC_ADDRESS_LENGTH];
+    //read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH, mac_to_check);
+    char *mac_to_check = read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH);
+    print_format(2, mac_to_check);
+    
+    
+    total_bytes += MAC_ADDRESS_LENGTH;  //number of readed bytes
+    //char number_to_check[RANDOM_NUM_LENGTH];
+    //read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH, number_to_check);
+    char *number_to_check = read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH);
+    print_format(2, number_to_check);
+    
+    
+    //TCP PORT is before a ',' so read until reach one the rest go for elements
+    int i = 0;
+    int c = 0;
+    int skip = 1;
+    total_bytes += RANDOM_NUM_LENGTH;  //number of readed bytes
+    //char port_tcp_client[PORT_LENGTH];
+    char *port_tcp_client = (char *)malloc(PORT_LENGTH);
+    //char elements_client[DATA_UDP_LENGTH];
+    char *elements_client = (char *)malloc(DATA_UDP_LENGTH);
+    while (buffer[total_bytes + i] != '\0' && i < (total_bytes + DATA_UDP_LENGTH) ) {
+        if (buffer[total_bytes + i] == ',') skip = 0;
+        if (i < PORT_LENGTH && skip){
+            port_tcp_client[i] = buffer[total_bytes + i];
+            c++;
+        }else{
+            elements_client[i-c-1] = buffer[total_bytes + i]; //skip , cause we don't do -1
+        }
+        i++;
+    }
+
+    port_tcp_client[PORT_LENGTH] = '\0';
+    elements_client[i-c] = '\0';
+    
+    // check if the mac and random_number match with the controller
+    if ((strcmp(mac_to_check, controller.mac) == 0) && (strcmp(number_to_check, controller.random_num) == 0)) {
+        //valid INFO_ACK
+        //client sent his own tcp port to communicate
+        controller.tcp_port = atoi(port_tcp_client); //to int
+        strncpy(controller.elements_data, elements_client, DATA_UDP_LENGTH);
+        controller.elements_data[DATA_UDP_LENGTH] = '\0';
+        print_controller_info(controller);
+        return 1;
+    }
+    
+    
+    //invalid INFO_ACK
+    return 0;
+}
 
 // check SUB_REQ package
 int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controllers) {
-    
-    char mac_to_check[MAC_ADDRESS_LENGTH];
-    char name_to_check[9];
 
-    //jump first byte cause it's the type
-    strncpy(mac_to_check, buffer + 1, MAC_ADDRESS_LENGTH - 1);
+    //MAC
+    int total_bytes = 1; //already writen
+    char mac_to_check[MAC_ADDRESS_LENGTH];
+    strncpy(mac_to_check, buffer + total_bytes, MAC_ADDRESS_LENGTH);
+    mac_to_check[MAC_ADDRESS_LENGTH] = '\0';
+
+    //NAME
+    total_bytes += MAC_ADDRESS_LENGTH; 
+    char name_to_check[NAME_LENGTH];
+
     //Name is before a ',' so read until reach one
     int i = 0;
-    int total_bytes = MAC_ADDRESS_LENGTH + RANDOM_NUM_LENGTH - 1;  //number of readed bytes
+     total_bytes += RANDOM_NUM_LENGTH;  //number of readed bytes
     while (buffer[total_bytes + i] != ',' && i < 8) {
         name_to_check[i] = buffer[total_bytes + i];
         i++;
     }
-    mac_to_check[MAC_ADDRESS_LENGTH - 1] = '\0';
     name_to_check[i] = '\0';
 
     // check if the mac and name match any controller
@@ -71,45 +195,58 @@ int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controll
         }
     }
 
-    //invalid SUB_REQ
+    //invalid SUB_REQ    
     return -1;
 }
 
 
+//Create info_ack
 
-//Method for test the creation of packages
-void print_pdu_test(char *pack) {
-    for (int i = 0; i < MAX_UDP_MESSAGE_SIZE; i++) {
-        printf("%02X ", (unsigned char)pack[i]);
-    }
-    printf("\n");
+char *create_pdu_info_ack(ServerConfig server_config, ControllerInfo controller){
+    char *info_ack = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    
+    // Type
+    info_ack[0] = 0x04;
+    //MAC Address
+    int total_bytes = 1; //already writen
+    write_to_buffer(info_ack, server_config.mac, total_bytes, total_bytes+MAC_ADDRESS_LENGTH);
+    //Random number
+    char *r_num = controller.random_num;
+    total_bytes += MAC_ADDRESS_LENGTH;
+    write_to_buffer(info_ack, r_num, total_bytes, total_bytes+RANDOM_NUM_LENGTH);
+    //PortTCP
+    char new_port_udp[PORT_LENGTH];
+    snprintf(new_port_udp, PORT_LENGTH, "%d", controller.tcp_port);
+    total_bytes += RANDOM_NUM_LENGTH;
+    write_to_buffer(info_ack, new_port_udp, total_bytes, total_bytes+PORT_LENGTH);
+    //fill with empty
+    total_bytes += PORT_LENGTH;
+    fill_empty_to_buffer(info_ack, total_bytes);
+
+    return info_ack;
 }
-
 
 //Create SUBS_ACK
 char *create_pdu_subs_ack(ServerConfig server_config, ControllerInfo controller){
     char *sub_ack = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    
     // Type
     sub_ack[0] = 0x01;
-    
     //MAC Address
-    int total_bytes = 1;
-    memcpy(sub_ack + total_bytes, server_config.mac, MAC_ADDRESS_LENGTH - 1); //remove /0 with -1
-
+    int total_bytes = 1; //already writen
+    write_to_buffer(sub_ack, server_config.mac, total_bytes, total_bytes+MAC_ADDRESS_LENGTH);
     //Random number
     char *r_num = controller.random_num;
-    total_bytes += MAC_ADDRESS_LENGTH - 1;
-    memcpy(sub_ack + total_bytes, r_num, RANDOM_NUM_LENGTH);
-
+    total_bytes += MAC_ADDRESS_LENGTH;
+    write_to_buffer(sub_ack, r_num, total_bytes, total_bytes+RANDOM_NUM_LENGTH);
     //PortUdp
-    char new_port_udp[PORTUDP_LENGTH];
-    //sprintf(new_port_udp, "%05d", controller.udp_port);
-    snprintf(new_port_udp, PORTUDP_LENGTH, "%d", controller.udp_port);
-
+    char new_port_udp[PORT_LENGTH];
+    snprintf(new_port_udp, PORT_LENGTH, "%d", controller.udp_port);
     total_bytes += RANDOM_NUM_LENGTH;
-    memcpy(sub_ack + total_bytes, new_port_udp, PORTUDP_LENGTH);
-
-    print_pdu_test(sub_ack);
+    write_to_buffer(sub_ack, new_port_udp, total_bytes, total_bytes+PORT_LENGTH);
+    //fill with empty
+    total_bytes += PORT_LENGTH;
+    fill_empty_to_buffer(sub_ack, total_bytes);
 
     return sub_ack;
 }
@@ -117,23 +254,23 @@ char *create_pdu_subs_ack(ServerConfig server_config, ControllerInfo controller)
 // create SUBS_REJ package
 char *create_pdu_subs_rej(ServerConfig server_config) {
     char *sub_rej = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    
     // Type
     sub_rej[0] = 0x02;
-    
     //MAC Address
-    int total_bytes = 1;
-    memcpy(sub_rej + total_bytes, server_config.mac, MAC_ADDRESS_LENGTH - 1); //remove /0 with -1
-
+    int total_bytes = 1; //already writen
+    write_to_buffer(sub_rej, server_config.mac, total_bytes, total_bytes+MAC_ADDRESS_LENGTH);
     //Random number
-    char *r_num = "000000000";
-
-    total_bytes += MAC_ADDRESS_LENGTH - 1;
-    memcpy(sub_rej + total_bytes, r_num, RANDOM_NUM_LENGTH);
-
+    char *r_num = "00000000";
+    total_bytes += MAC_ADDRESS_LENGTH;
+    write_to_buffer(sub_rej, r_num, total_bytes, total_bytes+RANDOM_NUM_LENGTH);
     //Reason
-    char reason[DATA_UDP_LENGTH] = "Rebuig de subscripció dades incorrectes";
+    char *reason = "Rebuig de subscripció dades incorrectes";
     total_bytes += RANDOM_NUM_LENGTH;
-    memcpy(sub_rej + total_bytes, reason, DATA_UDP_LENGTH);
+    write_to_buffer(sub_rej, reason, total_bytes, total_bytes+strlen(reason));
+    //fill with empty
+    total_bytes += strlen(reason);
+    fill_empty_to_buffer(sub_rej, total_bytes);
 
     return sub_rej;
 }
@@ -141,12 +278,11 @@ char *create_pdu_subs_rej(ServerConfig server_config) {
 //random num for clients
 char *generate_random_number() {
     srand(time(NULL));
-    int random_num = rand() % 1000000000;
+    int random_num = rand() % 100000000;
     char *random_str = (char *)malloc((RANDOM_NUM_LENGTH + 1) * sizeof(char));
 
-    //pass num to str only 9 digits
-    sprintf(random_str, "%09d", random_num);
-
+    //pass num to str only 8 digits
+    sprintf(random_str, "%08d", random_num);
     return random_str;
 }
 
@@ -231,14 +367,6 @@ void print_server_config(ServerConfig *server_config) {
     printf("Server MAC: %s\n", server_config->mac);
     printf("UDP Port: %d\n", server_config->udp_port);
     printf("TCP Port: %d\n", server_config->tcp_port);
-}
-
-// Print ControllerInfo (test)
-void print_controller_info(ControllerInfo *controllers, int num_controllers) {
-    for (int i = 0; i < num_controllers; i++) {
-        printf("Controller Name: %s\n", controllers[i].name);
-        printf("Controller MAC: %s\n", controllers[i].mac);
-    }
 }
 
 //load server file

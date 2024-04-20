@@ -134,7 +134,6 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
             if correct:
                 change_state_client(client, "SUBSCRIBED")
                 return False
-
             #set again old port
             disconnect_client_values(client, socket)
 

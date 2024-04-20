@@ -8,8 +8,8 @@
 #define RANDOM_NUM_LENGTH 9
 #define NAME_LENGTH 9
 #define DATA_UDP_LENGTH 80
-#define PORTUDP_LENGTH 6
-#define MAX_UDP_MESSAGE_SIZE 118 //Max UDP packet
+#define PORT_LENGTH 6
+#define MAX_UDP_MESSAGE_SIZE 103 //Max UDP packet
 
 #define MAX_UDP_PORT 40000 
 #define MIN_UDP_PORT 50000 //10k ports for udp
@@ -17,7 +17,7 @@
 #define MIN_TCP_PORT 60000 //10k ports for tcp
 
 typedef struct {
-    char name[9];   // Server Name
+    char name[NAME_LENGTH];   // Server Name
     char mac[MAC_ADDRESS_LENGTH];   // Mac Server
     int udp_port;   // UDP port
     int tcp_port;   // TCP port
@@ -40,6 +40,8 @@ typedef struct {
     char mac[MAC_ADDRESS_LENGTH]; // MAC /client 
     char random_num[RANDOM_NUM_LENGTH]; //random number
     int udp_port; //udp port for the client
+    int tcp_port; //port tcp from the client
+    char elements_data[DATA_UDP_LENGTH]; //controller data from the client
     ClientStates state;
 } ControllerInfo;
 
