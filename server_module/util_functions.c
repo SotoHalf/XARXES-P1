@@ -37,20 +37,43 @@ void disconnect_controller(ControllerInfo controller){
     strcpy(controller.random_num, "00000000");
 }
 
-
 int assign_udp_port() {
     srand(time(NULL));
     int udp_port = rand() % (MAX_UDP_PORT - MIN_UDP_PORT + 1) + MIN_UDP_PORT;
     return udp_port;
 }
 
+char *state_to_str(ClientStates state) {
+    switch (state) {
+        case DISCONNECTED:
+            return "DISCONNECTED";
+        case NOT_SUBSCRIBED:
+            return "NOT_SUBSCRIBED";
+        case WAIT_ACK_SUBS:
+            return "WAIT_ACK_SUBS";
+        case WAIT_INFO:
+            return "WAIT_INFO";
+        case WAIT_ACK_INFO:
+            return "WAIT_ACK_INFO";
+        case SUBSCRIBED:
+            return "SUBSCRIBED";
+        case SEND_HELLO:
+            return "SEND_HELLO";
+        case ERORR_STATE:
+            return "ERROR_STATE";
+        default:
+            return "UNKNOWN";
+    }
+}
+
 //Method for test the controller
-void print_controller_info(ControllerInfo controller) {
+void print_controller_info(ControllerInfo *controller) {
     printf("Controller Info:\n");
-    printf("MAC Address: %s\n", controller.mac);
-    printf("Random Number: %s\n", controller.random_num);
-    printf("TCP Port: %d\n", controller.tcp_port);
-    printf("Elements Data: %s\n", controller.elements_data);
+    printf("MAC Address: %s\n", controller->mac);
+    printf("Random Number: %s\n", controller->random_num);
+    printf("TCP Port: %d\n", controller->tcp_port);
+    printf("Elements Data: %s\n", controller->elements_data);
+    printf("Hello Data: %s\n", controller->data_hello);   
 }
 
 //Method for test the creation of packages
@@ -86,18 +109,6 @@ void write_to_buffer(char *buffer, char *value, int initial, int final) {
     }
 }
 
-/*
-void read_from_buffer(char *buffer, int initial, int final, char *res) {
-    //char *res = (char *)malloc(final);
-    int i = 0;
-    for (i = 0; i < final; i++) {
-        res[i] = buffer[initial + i];
-    }
-    res[i] = '\0';
-    //return res;
-}
-*/
-
 char *read_from_buffer(char *buffer, int initial, int final) {
     char *res = (char *)malloc(final);
     int i = 0;
@@ -109,54 +120,85 @@ char *read_from_buffer(char *buffer, int initial, int final) {
 }
 
 
+
+// check HELLO
+int validate_hello(char *buffer, ControllerInfo *controller){
+    int total_bytes = 1; //already writen
+    char *mac_to_check = read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH);    
+    
+    total_bytes += MAC_ADDRESS_LENGTH;  //number of readed bytes
+    char *number_to_check = read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH);
+    
+    //Data from hello
+    total_bytes += RANDOM_NUM_LENGTH;  //number of readed bytes
+    char *data_hello_temp = read_from_buffer(buffer, total_bytes, DATA_UDP_LENGTH);
+    
+    // check if the mac and random_number match with the controller
+    if ((strcmp(mac_to_check, controller->mac) == 0) && (strcmp(number_to_check, controller->random_num) == 0)) {
+        //valid Hello
+        strncpy(controller->data_hello, data_hello_temp, DATA_UDP_LENGTH);
+        //controller.data_hello[DATA_UDP_LENGTH] = '\0';
+        return 1;
+    }
+    
+    //invalid Hello
+    return 0;
+}
+
+
+
 // check INFO_ACK
-int validate_sub_info(char *buffer, ControllerInfo controller){
+int validate_sub_info(char *buffer, ControllerInfo *controller){
 
     int total_bytes = 1; //already writen
     //char mac_to_check[MAC_ADDRESS_LENGTH];
     //read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH, mac_to_check);
     char *mac_to_check = read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH);
-    print_format(2, mac_to_check);
-    
-    
+        
     total_bytes += MAC_ADDRESS_LENGTH;  //number of readed bytes
     //char number_to_check[RANDOM_NUM_LENGTH];
     //read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH, number_to_check);
-    char *number_to_check = read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH);
-    print_format(2, number_to_check);
-    
+    char *number_to_check = read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH);    
     
     //TCP PORT is before a ',' so read until reach one the rest go for elements
     int i = 0;
     int c = 0;
+    int len_ele = 0;
     int skip = 1;
     total_bytes += RANDOM_NUM_LENGTH;  //number of readed bytes
-    //char port_tcp_client[PORT_LENGTH];
+
     char *port_tcp_client = (char *)malloc(PORT_LENGTH);
-    //char elements_client[DATA_UDP_LENGTH];
     char *elements_client = (char *)malloc(DATA_UDP_LENGTH);
-    while (buffer[total_bytes + i] != '\0' && i < (total_bytes + DATA_UDP_LENGTH) ) {
+    //&& i < (total_bytes + DATA_UDP_LENGTH) 
+    
+    while (buffer[total_bytes + i] != '\0') {
         if (buffer[total_bytes + i] == ',') skip = 0;
         if (i < PORT_LENGTH && skip){
             port_tcp_client[i] = buffer[total_bytes + i];
             c++;
         }else{
             elements_client[i-c-1] = buffer[total_bytes + i]; //skip , cause we don't do -1
+            //controller.elements_data[i-c-1] = buffer[total_bytes + i];
+            len_ele++;
         }
         i++;
     }
+    
 
     port_tcp_client[PORT_LENGTH] = '\0';
-    elements_client[i-c] = '\0';
+    //elements_client[i-c] = '\0';
+    elements_client[len_ele] = '\0';
     
     // check if the mac and random_number match with the controller
-    if ((strcmp(mac_to_check, controller.mac) == 0) && (strcmp(number_to_check, controller.random_num) == 0)) {
+    if ((strcmp(mac_to_check, controller->mac) == 0) && (strcmp(number_to_check, controller->random_num) == 0)) {
         //valid INFO_ACK
         //client sent his own tcp port to communicate
-        controller.tcp_port = atoi(port_tcp_client); //to int
-        strncpy(controller.elements_data, elements_client, DATA_UDP_LENGTH);
-        controller.elements_data[DATA_UDP_LENGTH] = '\0';
-        print_controller_info(controller);
+        controller->tcp_port = atoi(port_tcp_client); //to int
+        strcpy(controller->elements_data, elements_client);
+        
+        //strncpy(controller.elements_data, elements_client, DATA_UDP_LENGTH);
+        //controller.elements_data[DATA_UDP_LENGTH] = '\0';
+        //print_val(controller.elements_data,DATA_UDP_LENGTH);
         return 1;
     }
     
@@ -199,9 +241,41 @@ int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controll
     return -1;
 }
 
+//create hello_rej
+char *create_pdu_hello_rej(ServerConfig server_config){
+    char *hello_rej = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    // Type
+    hello_rej[0] = 0x11;
+    //fill with empty
+    int total_bytes = 1;
+    fill_empty_to_buffer(hello_rej, total_bytes);
+    return hello_rej;
+}
+
+//create hello
+char *create_pdu_hello(ServerConfig server_config, ControllerInfo controller){
+    char *hello = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
+    
+    // Type
+    hello[0] = 0x10;
+    //MAC Address
+    int total_bytes = 1; //already writen
+    write_to_buffer(hello, server_config.mac, total_bytes, total_bytes+MAC_ADDRESS_LENGTH);
+    //Random number
+    char *r_num = controller.random_num;
+    total_bytes += MAC_ADDRESS_LENGTH;
+    write_to_buffer(hello, r_num, total_bytes, total_bytes+RANDOM_NUM_LENGTH);
+    //data
+    total_bytes += RANDOM_NUM_LENGTH;
+    write_to_buffer(hello, controller.data_hello, total_bytes, total_bytes+strlen(controller.data_hello));
+    //fill with empty
+    total_bytes += strlen(controller.data_hello);
+    fill_empty_to_buffer(hello, total_bytes);
+
+    return hello;
+}
 
 //Create info_ack
-
 char *create_pdu_info_ack(ServerConfig server_config, ControllerInfo controller){
     char *info_ack = (char *)malloc(MAX_UDP_MESSAGE_SIZE * sizeof(char));
     
@@ -414,7 +488,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
         //also then %s read string after ,
         fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
         (*controllers)[i].state = DISCONNECTED; //disconnected
-        strcpy((*controllers)[i].random_num, "00000000"); // set the random num 
+        strcpy((*controllers)[i].random_num, "00000000"); // set the random num     
     }
 
     fclose(file);

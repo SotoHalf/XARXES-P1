@@ -2,6 +2,7 @@ from enum import Enum
 import common
 import socket
 
+
 class Element:
     def __init__(self, **kwargs):
         self.magnitud = kwargs.get("magnitud", None)
@@ -146,13 +147,10 @@ class PDU: #UDP DATAGRAM
 
         
     def pdu_from_datagram(data_recived):
-        print("REBUT : ")
-        print(data_recived)
-        print(len(data_recived))
         if data_recived:
-            #test
             type_packet = common.PACKAGE_TYPE_UDP.get(data_recived[0],None)
-            print(type_packet)
+            if common.debug:
+                print(f"Paquet rebut: {type_packet}")
             if type_packet:
                 return PDU(**{
                     "typePdu": type_packet,
@@ -174,7 +172,8 @@ class PDU: #UDP DATAGRAM
     def setup_subs_hello(self,**kwargs):
         client = kwargs.get("client", None)
         if client:
-            self.mac = client.get_server_mac()
+            #self.mac = client.get_server_mac()
+            self.mac = client.get_mac()
             self.random_num = client.get_random_num()
             self.data = f"{client.get_name()},{client.get_situation()}"
         else:
@@ -342,11 +341,10 @@ class SocketSetup:
             self.sock.settimeout(timeout)
             packet = pdu.get_packet()
 
+            if common.debug:
+                print(f"Paquet enviat: {pdu.type_packet}")
+
             if self.sock_type == SocketType.UDP:
-                print("ENVIAT : ")
-                print(f"port {self.port}")
-                print(f"{packet}")
-                print(len(packet))
                 self.sock.sendto(packet, (self.destination, self.port))
             elif self.sock_type == SocketType.TCP:
                 self.sock.sendall(packet)

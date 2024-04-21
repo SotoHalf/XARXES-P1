@@ -42,7 +42,10 @@ typedef struct {
     int udp_port; //udp port for the client
     int tcp_port; //port tcp from the client
     char elements_data[DATA_UDP_LENGTH]; //controller data from the client
+    char data_hello[DATA_UDP_LENGTH];
     ClientStates state;
+    int pid_child;
+    int socket_child;
 } ControllerInfo;
 
 // Structure for arguments

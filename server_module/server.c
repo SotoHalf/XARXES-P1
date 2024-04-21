@@ -30,6 +30,12 @@ void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
     }
 }
 
+void show_state_client(ControllerInfo *controller){
+    char msg[100];
+    sprintf(msg, "Controlador: %s, passa a l'estat: %s", controller->name, state_to_str(controller->state));
+    print_format(1,msg);
+}
+
 int main(int argc, char *argv[]) {
     ProgramArgs args;
     parse_arguments(argc, argv, &args);
@@ -80,39 +86,53 @@ int main(int argc, char *argv[]) {
                         }
                     }
 
+
+                    // Set up timeout
+                    struct timeval timeout;
+                    timeout.tv_sec = 2;
+                    timeout.tv_usec = 0;
+                    if (setsockopt(controller_udp_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == -1) {
+                        disconnect_controller(controller);
+                        close(controller_udp_socket);
+                        exit(0);
+                    }
+
                     //valid send subs_ack
                     char *sub_ack = create_pdu_subs_ack(server_config, controller);
                     sendto(udp_socket, sub_ack, MAX_UDP_MESSAGE_SIZE, 0,
                         (struct sockaddr *)&client_addr, addr_len);
-                    
-                    print_format(1,"Controlador pasa a l'estat WAIT_INFO");
+
+                    show_state_client(&controller);
                     if (args.debug){
                         print_format(2,"Creació d'un subprocés (FORK)");
                     }
-                    int status;
+                    //int status;
                     pid_t pid = fork();
                     if (pid == -1) { //error
                         continue;
                     } else if (pid == 0) { //child
+                        
                         int info_valid_received = 0;
                         int s = 2; // retries
                         while (s > 0 && !info_valid_received) {
                             char info_buffer[MAX_UDP_MESSAGE_SIZE];
                             int info_bytes_received = recvfrom(controller_udp_socket, info_buffer, sizeof(info_buffer), 0, (struct sockaddr *)&client_addr, &addr_len);
                             if (info_bytes_received == -1) {
+                                s--;
                                 continue;
                             }
                             info_buffer[info_bytes_received] = '\0';
                             type_package = get_type_package(info_buffer);
                             
                             if (type_package == SUBS_INFO) {
-                                if (validate_sub_info(info_buffer, controller)) {
+                                if (validate_sub_info(info_buffer, &controller)) {
                                     info_valid_received = 1;
                                 } else {
                                     //failed send rejected
                                     char *sub_rej = create_pdu_subs_rej(server_config);
                                     sendto(controller_udp_socket, sub_rej, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
                                     disconnect_controller(controller);
+                                    show_state_client(&controller);
                                     close(controller_udp_socket);
                                     exit(0);
                                 }
@@ -127,13 +147,83 @@ int main(int argc, char *argv[]) {
                             char *info_ack = create_pdu_info_ack(server_config, controller);
                             sendto(controller_udp_socket, info_ack, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
                             controller.state=SUBSCRIBED;
-                            //keep hello here
+                            show_state_client(&controller);
 
+                            //keep hello here
+                            int x = 3; //attemps lost package
+                            int first = 1;
+                            while ((controller.state == SUBSCRIBED && x > 0) || (controller.state == SEND_HELLO && x > 0)){
+                                char hello_buffer[MAX_UDP_MESSAGE_SIZE];
+                                int hello_bytes_received = recvfrom(controller_udp_socket, hello_buffer, sizeof(hello_buffer), 0, (struct sockaddr *)&client_addr, &addr_len);
+                                if (hello_bytes_received == -1) {
+                                    x--;
+                                    continue;
+                                }
+                                hello_buffer[hello_bytes_received] = '\0';
+                                type_package = get_type_package(hello_buffer);
+                                
+                                if (type_package == HELLO) {
+                                    
+                                    if (validate_hello(hello_buffer, &controller)) {
+                                        if (first){
+                                            controller.state = SEND_HELLO;
+                                            show_state_client(&controller);
+                                            first = 0;
+                                        }
+                                        x = 3;
+                                        char *hello = create_pdu_hello(server_config, controller);
+                                        sendto(controller_udp_socket, hello, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
+                                        if (args.debug){
+                                            char msg_hello_good[100];
+                                            sprintf(msg_hello_good, "Controlador %s ha enviat hello correctament", controller.name);
+                                            print_format(2,msg_hello_good);
+                                        }
+
+                                    } else {
+                                        char msg_helo_supl[100];
+                                        sprintf(msg_helo_supl, "Controlador %s [%s] ha sigut suplantat", controller.name, controller.mac);
+                                        print_format(1,msg_helo_supl);
+                                        //failed send rejected
+                                        char *hello_rej = create_pdu_hello_rej(server_config);
+                                        sendto(controller_udp_socket, hello_rej, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
+                                        disconnect_controller(controller);
+                                        show_state_client(&controller);
+                                        close(controller_udp_socket);
+                                        exit(0);
+                                    }
+                                }else if (type_package == HELLO_REJ) {
+                                    
+                                    char msg_hello_rej[100];
+                                    sprintf(msg_hello_rej, "Controlador %s [%s] ha enviat un HELLO_REJ", controller.name, controller.mac);
+                                    print_format(1,msg_hello_rej);
+                                    disconnect_controller(controller);
+                                    show_state_client(&controller);
+                                    close(controller_udp_socket);
+                                    exit(0);
+                                } else{
+                                    x--;
+                                }
+                                sleep(1);
+                            }
+
+                            if (x <= 0){
+                                char msg_hello_timeout[100];
+                                sprintf(msg_hello_timeout, "Controlador %s [%s] no ha rebut 3 HELLO consecutius", controller.name, controller.mac);
+                                print_format(1,msg_hello_timeout);
+                                disconnect_controller(controller);
+                                show_state_client(&controller);
+                                close(controller_udp_socket);
+                                exit(0);
+                            }
                         }
                         
                     } else {
+
+                        //save pid and socket to close if it's needed
+                        controller.pid_child=pid;
+                        controller.socket_child=controller_udp_socket;
                         // Parent
-                        waitpid(pid, &status, 0);
+                        //waitpid(pid, &status, 0);
                     }
                 }
                 
