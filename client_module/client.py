@@ -1,10 +1,4 @@
-#!/usr/bin/env python3
-
-
-###########
-##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-#recorda posar python y no python3
+#!/usr/bin/env python
 
 import sys
 import time

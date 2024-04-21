@@ -6,6 +6,8 @@
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <sys/time.h>
+#include <signal.h> 
+#include <pthread.h> 
 #include "data_structures.h"
 #include "util_functions.h"
 
@@ -36,14 +38,101 @@ void show_state_client(ControllerInfo *controller){
     print_format(1,msg);
 }
 
+ControllerInfo *controllers;
+ControllerInfo controller;
+ServerConfig server_config;
+int run_command_thread = 1;
+
+
+void print_controllers_state() {
+    printf("%s\t", controller.name);
+    
+    // Print IP address
+    printf("127.0.0.1:%d\t", controller.udp_port);
+    // Print MAC address
+    printf("%s\t", controller.mac);
+    
+    // Print Random number
+    printf("%s\t", controller.random_num);
+
+    // Print State
+    printf("%s\t", state_to_str(controller.state));
+
+    // Print Situation
+    printf("%s\t", controller.situation);
+
+    // Print Elements
+    printf("%s\t", controller.elements_data);
+    printf("\n");
+    
+}
+
+void disconnect_controllers() {
+    for (int i = 0; i < server_config.num_controllers; i++) {
+        if (controllers[i].socket_child != 0) {
+            close(controllers[i].socket_child); // close sokets
+        }
+        
+    }
+    free(controllers);
+    exit(0);
+}
+
+
+void *command_handler(void *arg) {
+    pid_t parent_pid = *((pid_t*)arg); 
+    char command[10];
+
+    while (1) {
+        if (!run_command_thread) {
+            break;
+        }
+        scanf("%s", command);
+        if (strcmp(command, "quit") == 0) {
+            kill(parent_pid, SIGINT);
+            pthread_exit(NULL);
+        } else if (strcmp(command, "list") == 0) {
+            kill(0,SIGUSR1);
+            printf("\n");
+        }
+    }
+    return NULL;
+}
+
+// Función para manejar la señal SIGINT (Ctrl+C)
+void sigint_handler(int sig) {
+    if (run_command_thread) {
+        kill(0, SIGINT);
+        disconnect_controllers(); //parent close sockets
+    }else{
+        kill(getpid(), SIGUSR1); //child kill
+    }
+}
+
+void signint_print_state(int sig){
+    if (run_command_thread) {
+        printf("--NOM--- ------IP------- -----MAC---- --RNDM-- ----ESTAT--- --SITUACIÓ-- --ELEMENTS-------------------------------------------\n");
+    }else{
+        sleep(1);
+        print_controllers_state(); //child print
+    }
+}
+
 int main(int argc, char *argv[]) {
     ProgramArgs args;
     parse_arguments(argc, argv, &args);
 
-    ServerConfig server_config;
-    ControllerInfo *controllers;
-
     load_server_files(&args, &server_config, &controllers);
+
+    int main_pid = getpid();
+
+    pthread_t commands_thread;
+    if (pthread_create(&commands_thread, NULL, command_handler, (void*)&main_pid) != 0) {
+        exit(1);
+    }
+
+    signal(SIGINT, sigint_handler); //terminate
+    signal(SIGUSR1, signint_print_state); //stat
 
     int udp_socket = create_udp_socket(server_config.udp_port);
     int tcp_socket = create_tcp_socket(server_config.tcp_port);
@@ -69,7 +158,8 @@ int main(int argc, char *argv[]) {
             int controller_pos = validate_sub_req(buffer, controllers, server_config.num_controllers);
             //check if controller exists
             if (controller_pos != -1) {
-                ControllerInfo controller = controllers[controller_pos];
+                //ControllerInfo controller = controllers[controller_pos];
+                controller = controllers[controller_pos];
 
                 if (controller.state == DISCONNECTED){
                     controller.state=WAIT_INFO;
@@ -92,10 +182,11 @@ int main(int argc, char *argv[]) {
                     timeout.tv_sec = 2;
                     timeout.tv_usec = 0;
                     if (setsockopt(controller_udp_socket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) == -1) {
-                        disconnect_controller(controller);
+                        disconnect_controller(&controller);
                         close(controller_udp_socket);
                         exit(0);
                     }
+                    controller.socket_child = controller_udp_socket;
 
                     //valid send subs_ack
                     char *sub_ack = create_pdu_subs_ack(server_config, controller);
@@ -106,12 +197,16 @@ int main(int argc, char *argv[]) {
                     if (args.debug){
                         print_format(2,"Creació d'un subprocés (FORK)");
                     }
+
+                    //avoid client to have multiple subs
+                    avoid_sockets_pid(&controller);
+            
                     //int status;
                     pid_t pid = fork();
                     if (pid == -1) { //error
                         continue;
                     } else if (pid == 0) { //child
-                        
+                        run_command_thread = 0;
                         int info_valid_received = 0;
                         int s = 2; // retries
                         while (s > 0 && !info_valid_received) {
@@ -131,7 +226,7 @@ int main(int argc, char *argv[]) {
                                     //failed send rejected
                                     char *sub_rej = create_pdu_subs_rej(server_config);
                                     sendto(controller_udp_socket, sub_rej, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
-                                    disconnect_controller(controller);
+                                    disconnect_controller(&controller);
                                     show_state_client(&controller);
                                     close(controller_udp_socket);
                                     exit(0);
@@ -170,6 +265,7 @@ int main(int argc, char *argv[]) {
                                             show_state_client(&controller);
                                             first = 0;
                                         }
+
                                         x = 3;
                                         char *hello = create_pdu_hello(server_config, controller);
                                         sendto(controller_udp_socket, hello, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
@@ -178,7 +274,8 @@ int main(int argc, char *argv[]) {
                                             sprintf(msg_hello_good, "Controlador %s ha enviat hello correctament", controller.name);
                                             print_format(2,msg_hello_good);
                                         }
-
+                                        //print_controller_info(&controller);
+                                        
                                     } else {
                                         char msg_helo_supl[100];
                                         sprintf(msg_helo_supl, "Controlador %s [%s] ha sigut suplantat", controller.name, controller.mac);
@@ -186,7 +283,7 @@ int main(int argc, char *argv[]) {
                                         //failed send rejected
                                         char *hello_rej = create_pdu_hello_rej(server_config);
                                         sendto(controller_udp_socket, hello_rej, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr, addr_len);
-                                        disconnect_controller(controller);
+                                        disconnect_controller(&controller);
                                         show_state_client(&controller);
                                         close(controller_udp_socket);
                                         exit(0);
@@ -196,7 +293,7 @@ int main(int argc, char *argv[]) {
                                     char msg_hello_rej[100];
                                     sprintf(msg_hello_rej, "Controlador %s [%s] ha enviat un HELLO_REJ", controller.name, controller.mac);
                                     print_format(1,msg_hello_rej);
-                                    disconnect_controller(controller);
+                                    disconnect_controller(&controller);
                                     show_state_client(&controller);
                                     close(controller_udp_socket);
                                     exit(0);
@@ -210,18 +307,17 @@ int main(int argc, char *argv[]) {
                                 char msg_hello_timeout[100];
                                 sprintf(msg_hello_timeout, "Controlador %s [%s] no ha rebut 3 HELLO consecutius", controller.name, controller.mac);
                                 print_format(1,msg_hello_timeout);
-                                disconnect_controller(controller);
+                                disconnect_controller(&controller);
                                 show_state_client(&controller);
+                                close(controller_udp_socket);
+                                exit(0);
+                            }else{
                                 close(controller_udp_socket);
                                 exit(0);
                             }
                         }
                         
                     } else {
-
-                        //save pid and socket to close if it's needed
-                        controller.pid_child=pid;
-                        controller.socket_child=controller_udp_socket;
                         // Parent
                         //waitpid(pid, &status, 0);
                     }

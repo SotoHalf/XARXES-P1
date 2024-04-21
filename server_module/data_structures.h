@@ -16,6 +16,9 @@
 #define MAX_TCP_PORT 50001
 #define MIN_TCP_PORT 60000 //10k ports for tcp
 
+#include <sys/types.h>
+#include <sys/socket.h>
+
 typedef struct {
     char name[NAME_LENGTH];   // Server Name
     char mac[MAC_ADDRESS_LENGTH];   // Mac Server
@@ -37,6 +40,7 @@ typedef enum {
 
 typedef struct {
     char name[NAME_LENGTH]; // Controller /client Name
+    char situation[DATA_UDP_LENGTH]; //situation
     char mac[MAC_ADDRESS_LENGTH]; // MAC /client 
     char random_num[RANDOM_NUM_LENGTH]; //random number
     int udp_port; //udp port for the client
@@ -44,7 +48,7 @@ typedef struct {
     char elements_data[DATA_UDP_LENGTH]; //controller data from the client
     char data_hello[DATA_UDP_LENGTH];
     ClientStates state;
-    int pid_child;
+    pid_t pid_child;
     int socket_child;
 } ControllerInfo;
 

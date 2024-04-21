@@ -18,7 +18,7 @@ PackageTypeUDP get_type_package(char *buffer);
 char *generate_random_number();
 char *create_pdu_subs_ack(ServerConfig server_config, ControllerInfo controller);
 int assign_udp_port();
-void disconnect_controller(ControllerInfo controller);
+void disconnect_controller(ControllerInfo *controller);
 void write_to_buffer(char *buffer, char *value, int initial, int final);
 char *read_from_buffer(char *buffer, int initial, int final);
 int validate_hello(char *buffer, ControllerInfo *controller);
@@ -26,5 +26,7 @@ char *create_pdu_hello_rej(ServerConfig server_config);
 char *create_pdu_hello(ServerConfig server_config, ControllerInfo controller);
 char *state_to_str(ClientStates state);
 char *create_pdu_info_ack(ServerConfig server_config, ControllerInfo controller);
-
+void set_data_sockets_pid(ControllerInfo *controller, pid_t pid, int socket);
+void avoid_sockets_pid(ControllerInfo *controller);
+void set_state_controller(ControllerInfo *controller, int state);
 #endif

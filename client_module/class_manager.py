@@ -364,6 +364,8 @@ class SocketSetup:
                 recived_data = self.sock.recv(SocketSetup.BufferSizeRecv)
         except socket.timeout:
             pass
+        except OSError:
+            pass
 
         return recived_data
     

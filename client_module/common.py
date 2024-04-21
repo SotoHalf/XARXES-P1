@@ -4,7 +4,7 @@ from datetime import datetime
 
  #--------- FINAL VALUES ---------
 BASE_PATH = os.getcwd()
-CONFIG_PATH = os.path.join(BASE_PATH, "./../config_files") #TEMPORAL REMOVE ./../
+CONFIG_PATH = os.path.join(BASE_PATH, "./config_files") #TEMPORAL REMOVE ./../
 DEFAULT_CONFIG_CLIENT = "client.cfg"
 
 #--------- VALUES ---------

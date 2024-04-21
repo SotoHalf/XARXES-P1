@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 #include <time.h>
+#include <signal.h> 
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -32,9 +34,25 @@ void print_format(int type, const char *s) {
     printf("%s: %s => %s\n", time_str, type_str, s);
 }
 
-void disconnect_controller(ControllerInfo controller){
-    controller.state=DISCONNECTED;
-    strcpy(controller.random_num, "00000000");
+void disconnect_controller(ControllerInfo *controller){
+    controller->state=DISCONNECTED;
+    strcpy(controller->random_num, "00000000");
+}
+
+void set_state_controller(ControllerInfo *controller, int state){
+    controller->state=state;
+}
+
+void set_data_sockets_pid(ControllerInfo *controller, pid_t pid, int socket){
+    controller->pid_child=pid;
+    controller->socket_child=socket;
+}
+
+void avoid_sockets_pid(ControllerInfo *controller){
+    if (controller->pid_child != -1){
+        kill(controller->pid_child, SIGKILL); // kill pid child
+        close(controller->socket_child);
+    }
 }
 
 int assign_udp_port() {
@@ -71,9 +89,13 @@ void print_controller_info(ControllerInfo *controller) {
     printf("Controller Info:\n");
     printf("MAC Address: %s\n", controller->mac);
     printf("Random Number: %s\n", controller->random_num);
+    printf("Stat: %s\n", state_to_str(controller->state));
     printf("TCP Port: %d\n", controller->tcp_port);
     printf("Elements Data: %s\n", controller->elements_data);
-    printf("Hello Data: %s\n", controller->data_hello);   
+    printf("Situation: %s\n", controller->situation);
+    printf("Hello Data: %s\n", controller->data_hello);
+    printf("Socket Data: %d\n", controller->socket_child);   
+    printf("Pid Data: %d\n", controller->pid_child);   
 }
 
 //Method for test the creation of packages
@@ -118,7 +140,6 @@ char *read_from_buffer(char *buffer, int initial, int final) {
     res[i] = '\0';
     return res;
 }
-
 
 
 // check HELLO
@@ -222,16 +243,29 @@ int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controll
 
     //Name is before a ',' so read until reach one
     int i = 0;
-     total_bytes += RANDOM_NUM_LENGTH;  //number of readed bytes
+    total_bytes += RANDOM_NUM_LENGTH;  //number of readed bytes
     while (buffer[total_bytes + i] != ',' && i < 8) {
         name_to_check[i] = buffer[total_bytes + i];
         i++;
     }
     name_to_check[i] = '\0';
 
+    
+    total_bytes += i + 1; 
+    char situation_to_add[MAX_UDP_PORT];
+    int x = 0;
+    while (buffer[total_bytes + x] != '\0' && x < 80) {
+        situation_to_add[x] = buffer[total_bytes + x];
+        x++;
+    }
+    situation_to_add[x] = '\0';
+    
+    
+
     // check if the mac and name match any controller
     for (int i = 0; i < num_controllers; i++) {
         if (strcmp(mac_to_check, controllers[i].mac) == 0 && strcmp(name_to_check, controllers[i].name) == 0) {
+            strcpy(controllers[i].situation,situation_to_add);
             //valid SUB_REQ
             return i;
         }
@@ -478,7 +512,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
         num_controllers++;
     }
 
-    // Save memory for the array of controllers
+    //// Save memory for the array of controllers
     *controllers = malloc(num_controllers * sizeof(ControllerInfo));
     rewind(file); //Go back at the start of the file
 
@@ -489,6 +523,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
         fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
         (*controllers)[i].state = DISCONNECTED; //disconnected
         strcpy((*controllers)[i].random_num, "00000000"); // set the random num     
+        (*controllers)[i].pid_child = -1;
     }
 
     fclose(file);
