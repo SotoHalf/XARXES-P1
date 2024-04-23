@@ -275,9 +275,13 @@ class PDU: #UDP DATAGRAM
     #set the correct format of a package, max n fill left with missing n
     def encode_bytes(s,n):
         return s.encode()[:n].ljust(n, b'\x00')
-
+    
     def decode_bytes(s,ini,fin):
-        return s[ini:fin].decode('utf-8').rstrip('\x00')
+        p_bytes = s[ini:fin]
+        e_p = p_bytes.find(b'\x00')
+        if e_p != -1:
+            p_bytes = p_bytes[:e_p]
+        return p_bytes.decode('utf-8')
     
     def check_hello_recived(client:Client, data_recived, data_sended):
         if not data_recived: return False
@@ -320,6 +324,8 @@ class SocketSetup:
 
     def setup_udp(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        port_net = socket.htons(self.port)
+        self.sock.bind((self.destination, port_net))
         self.connected = True
     
     def setup_tcp(self):

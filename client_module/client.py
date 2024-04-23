@@ -25,14 +25,17 @@ def signal_handler(sig, frame):
 
 # COMMANDS
 def exit_server(socket_udp, socket_tcp):
-    common.run_main = False
-    common.hello_thread = False
-    common.command_thread = False
-    if socket_udp:
-        socket_udp.close()
-    if socket_tcp:
-        socket_tcp.close()
-    sys.exit(0)
+    try:
+        common.run_main = False
+        common.hello_thread = False
+        common.command_thread = False
+        if socket_udp:
+            socket_udp.close()
+        if socket_tcp:
+            socket_tcp.close()
+        sys.exit(0)
+    except:
+        pass
 
 def stat_client(client):
     print(client.get_stat())
