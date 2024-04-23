@@ -29,4 +29,5 @@ char *create_pdu_info_ack(ServerConfig server_config, ControllerInfo controller)
 void set_data_sockets_pid(ControllerInfo *controller, pid_t pid, int socket);
 void avoid_sockets_pid(ControllerInfo *controller);
 void set_state_controller(ControllerInfo *controller, int state);
+int get_pos_for_pipe_controller(ControllerInfo pipe_controller, ControllerInfo *all_controllers, int num_controllers);
 #endif

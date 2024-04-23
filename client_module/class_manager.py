@@ -149,8 +149,6 @@ class PDU: #UDP DATAGRAM
     def pdu_from_datagram(data_recived):
         if data_recived:
             type_packet = common.PACKAGE_TYPE_UDP.get(data_recived[0],None)
-            if common.debug:
-                print(f"Paquet rebut: {type_packet}")
             if type_packet:
                 return PDU(**{
                     "typePdu": type_packet,
@@ -340,9 +338,6 @@ class SocketSetup:
         if self.connected:
             self.sock.settimeout(timeout)
             packet = pdu.get_packet()
-
-            if common.debug:
-                print(f"Paquet enviat: {pdu.type_packet}")
 
             if self.sock_type == SocketType.UDP:
                 self.sock.sendto(packet, (self.destination, self.port))

@@ -119,7 +119,7 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
 
             #send subs_info
             change_state_client(client, "WAIT_ACK_INFO")
-            data_recived, _ = send_pdu_datagram(client,socket,"SUBS_INFO", t) #t = 1 sec
+            data_recived, _ = send_pdu_datagram(client,socket,"SUBS_INFO", t*3) #t = 1 sec
             pdu_kwargs = read_pdu_datagram(data_recived)
             
             correct = False
@@ -134,6 +134,10 @@ def subscription_process(client:Client, socket:SocketSetup, t:int ,p:int , q:int
             if correct:
                 change_state_client(client, "SUBSCRIBED")
                 return False
+            else:
+                if common.debug:
+                    print_format("Error dades incorrectes del paquet INFO_ACK", flag=2)
+
             #set again old port
             disconnect_client_values(client, socket)
 

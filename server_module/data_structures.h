@@ -48,7 +48,6 @@ typedef struct {
     char elements_data[DATA_UDP_LENGTH]; //controller data from the client
     char data_hello[DATA_UDP_LENGTH];
     ClientStates state;
-    pid_t pid_child;
     int socket_child;
 } ControllerInfo;
 

@@ -36,23 +36,12 @@ void print_format(int type, const char *s) {
 
 void disconnect_controller(ControllerInfo *controller){
     controller->state=DISCONNECTED;
+    controller->socket_child = -1;
     strcpy(controller->random_num, "00000000");
 }
 
 void set_state_controller(ControllerInfo *controller, int state){
     controller->state=state;
-}
-
-void set_data_sockets_pid(ControllerInfo *controller, pid_t pid, int socket){
-    controller->pid_child=pid;
-    controller->socket_child=socket;
-}
-
-void avoid_sockets_pid(ControllerInfo *controller){
-    if (controller->pid_child != -1){
-        kill(controller->pid_child, SIGKILL); // kill pid child
-        close(controller->socket_child);
-    }
 }
 
 int assign_udp_port() {
@@ -94,8 +83,7 @@ void print_controller_info(ControllerInfo *controller) {
     printf("Elements Data: %s\n", controller->elements_data);
     printf("Situation: %s\n", controller->situation);
     printf("Hello Data: %s\n", controller->data_hello);
-    printf("Socket Data: %d\n", controller->socket_child);   
-    printf("Pid Data: %d\n", controller->pid_child);   
+    printf("Socket Data: %d\n", controller->socket_child);
 }
 
 //Method for test the creation of packages
@@ -228,6 +216,18 @@ int validate_sub_info(char *buffer, ControllerInfo *controller){
     return 0;
 }
 
+
+int get_pos_for_pipe_controller(ControllerInfo pipe_controller, ControllerInfo *all_controllers, int num_controllers){
+    // check if the match any controller
+    for (int i = 0; i < num_controllers; i++) {
+        if (strcmp(pipe_controller.name, all_controllers[i].name) == 0){
+            return i;
+        }
+    }
+    return -1;
+}
+
+
 // check SUB_REQ package
 int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controllers) {
 
@@ -249,7 +249,6 @@ int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controll
         i++;
     }
     name_to_check[i] = '\0';
-
     
     total_bytes += i + 1; 
     char situation_to_add[MAX_UDP_PORT];
@@ -415,8 +414,9 @@ int create_udp_socket(int port) {
     // UDP 
     udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
     if (udp_socket == -1) {
-        print_format(3,"No ha sigut possible crear un socket UDP");
-        exit(1);
+
+        //print_format(3,"No ha sigut possible crear un socket UDP");
+        return -1;
     }
 
     // Server address structure
@@ -523,7 +523,7 @@ int read_controllers_file(const char *filename, ControllerInfo **controllers) {
         fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
         (*controllers)[i].state = DISCONNECTED; //disconnected
         strcpy((*controllers)[i].random_num, "00000000"); // set the random num     
-        (*controllers)[i].pid_child = -1;
+        (*controllers)[i].socket_child = -1;
     }
 
     fclose(file);
