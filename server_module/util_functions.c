@@ -11,6 +11,192 @@
 #include "data_structures.h"
 #include "util_functions.h"
 
+
+
+//##################    LOAD DATA FROM FILES    ########################
+
+// Function to parse/get program arguments
+void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
+
+    strcpy(args->server_file, CONFIG_FILE_DEFAULT);
+    args->debug = 0;
+    strcpy(args->controllers_file, CONTROLLERS_FILE_DEFAULT);
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-d") == 0) {
+            args->debug = 1;
+        } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
+            strcpy(args->server_file, argv[i + 1]);
+            i++;
+        } else if (strcmp(argv[i], "-u") == 0 && i + 1 < argc) {
+            strcpy(args->controllers_file, argv[i + 1]);
+            i++;
+        }
+    }
+}
+
+//load server file
+void read_server_file(const char *filename, ServerConfig *server_config) {
+    // Open the file
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        char error_message[100] = "No es pot obrir l'arxiu de configuració:";
+        strcat(error_message, filename);
+        print_format(3, error_message);
+        exit(1);
+    }
+
+    // Set server configuration parameters
+    fscanf(file, "Name = %8s\n", server_config->name);
+    fscanf(file, "MAC = %12s\n", server_config->mac);
+    fscanf(file, "UDP-port = %d\n", &server_config->udp_port);
+    fscanf(file, "TCP-port = %d\n", &server_config->tcp_port);
+    fclose(file);
+}
+
+//load controller file
+int read_controllers_file(const char *filename, ControllerInfo **controllers) {
+    // Open the file
+    FILE *file = fopen(filename, "r");
+    if (file == NULL) {
+        print_format(3, "No es pot obrir la base de dades de controladors");
+        exit(1);
+    }
+
+    // Count the number of controllers in the file
+    int num_controllers = 0;
+    char line[256];
+    while (fgets(line, sizeof(line), file) != NULL) {
+        num_controllers++;
+    }
+
+    //// Save memory for the array of controllers
+    *controllers = malloc(num_controllers * sizeof(ControllerInfo));
+    rewind(file); //Go back at the start of the file
+
+    for (int i = 0; i < num_controllers; i++) {
+        // Set controller information from the file
+        //%[^,] stop reading when reaching a ,
+        //also then %s read string after ,
+        fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
+        (*controllers)[i].state = DISCONNECTED; //disconnected
+        strcpy((*controllers)[i].random_num, "00000000"); // set the random num     
+        (*controllers)[i].socket_child = -1;
+    }
+
+    fclose(file);
+
+    return num_controllers;
+}
+
+
+void load_server_files(ProgramArgs *args, ServerConfig *server_config, ControllerInfo **controllers) {
+    //Get config path
+    char file_path[100];
+    strcpy(file_path, CONFIG_PATH);
+
+    //Get Server Path
+    char file_path_server[100];
+    strcpy(file_path_server, file_path);
+    strcat(file_path_server, args->server_file);
+
+    //Get Controllers Path
+    char file_path_controllers[100];
+    strcpy(file_path_controllers, file_path);
+    strcat(file_path_controllers, args->controllers_file);
+
+    //Read server config
+    read_server_file(file_path_server, server_config);
+
+    // Read controllers
+    int num_controllers = read_controllers_file(file_path_controllers, controllers);
+    server_config->num_controllers=num_controllers;
+
+}
+
+
+//##################   SOCKETS    ########################
+
+int assign_udp_port() {
+    srand(time(NULL));
+    int udp_port = rand() % (MAX_UDP_PORT - MIN_UDP_PORT + 1) + MIN_UDP_PORT;
+    return udp_port;
+}
+
+//random num for clients
+char *generate_random_number() {
+    srand(time(NULL));
+    int random_num = rand() % 100000000;
+    char *random_str = (char *)malloc((RANDOM_NUM_LENGTH + 1) * sizeof(char));
+
+    //pass num to str only 8 digits
+    sprintf(random_str, "%08d", random_num);
+    return random_str;
+}
+
+int create_udp_socket(int port) {
+    int udp_socket;
+
+    // UDP 
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (udp_socket == -1) {
+
+        //print_format(3,"No ha sigut possible crear un socket UDP");
+        return -1;
+    }
+
+    // Server address structure
+    struct sockaddr_in addr_server;
+    memset(&addr_server, 0, sizeof(addr_server));
+    addr_server.sin_family = AF_INET;
+    addr_server.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr_server.sin_port = htons(port);
+
+    // Bind socket to the server address
+    if (bind(udp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
+        //print_format(3,"No ha sigut possible fer un bind del socket UDP");
+        //exit(1);
+        return -1;
+    }
+
+    return udp_socket;
+}
+
+// Function to create a TCP socket
+int create_tcp_socket(int port) {
+    int tcp_socket;
+
+    // Create TCP socket
+    tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
+    if (tcp_socket == -1) {
+        print_format(3,"No ha sigut possible crear un socket TCP");
+        exit(1);
+    }
+
+    // Prepare server address structure
+    struct sockaddr_in addr_server;
+    memset(&addr_server, 0, sizeof(addr_server));
+    addr_server.sin_family = AF_INET;
+    addr_server.sin_addr.s_addr = htonl(INADDR_ANY);
+    addr_server.sin_port = htons(port);
+
+    // Bind socket to the server address
+    if (bind(tcp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
+        print_format(3,"No ha sigut possible fer un bind del socket TCP");
+        exit(1);
+    }
+
+    // Queue wait | Max 5 connections
+    if (listen(tcp_socket, 5) == -1) {
+        print_format(3,"No ha sigut possible fer un listen del socket TCP");
+        exit(1);
+    }
+
+    return tcp_socket;
+}
+
+//##################    PRINTS    ########################
+
 void print_format(int type, const char *s) {
     const char *type_str;
     
@@ -32,45 +218,6 @@ void print_format(int type, const char *s) {
     info = localtime(&now);
     strftime(time_str, sizeof(time_str), "%H:%M:%S", info);
     printf("%s: %s => %s\n", time_str, type_str, s);
-}
-
-void disconnect_controller(ControllerInfo *controller){
-    controller->state=DISCONNECTED;
-    controller->socket_child = -1;
-    strcpy(controller->random_num, "00000000");
-}
-
-void set_state_controller(ControllerInfo *controller, int state){
-    controller->state=state;
-}
-
-int assign_udp_port() {
-    srand(time(NULL));
-    int udp_port = rand() % (MAX_UDP_PORT - MIN_UDP_PORT + 1) + MIN_UDP_PORT;
-    return udp_port;
-}
-
-char *state_to_str(ClientStates state) {
-    switch (state) {
-        case DISCONNECTED:
-            return "DISCONNECTED";
-        case NOT_SUBSCRIBED:
-            return "NOT_SUBSCRIBED";
-        case WAIT_ACK_SUBS:
-            return "WAIT_ACK_SUBS";
-        case WAIT_INFO:
-            return "WAIT_INFO";
-        case WAIT_ACK_INFO:
-            return "WAIT_ACK_INFO";
-        case SUBSCRIBED:
-            return "SUBSCRIBED";
-        case SEND_HELLO:
-            return "SEND_HELLO";
-        case ERORR_STATE:
-            return "ERROR_STATE";
-        default:
-            return "UNKNOWN";
-    }
 }
 
 //Method for test the controller
@@ -102,33 +249,34 @@ void print_val(char *val, int limit) {
     printf("\n");
 }
 
-void fill_empty_to_buffer(char *buffer, int initial) {
-    for (int i = initial; i < MAX_UDP_MESSAGE_SIZE; i++) {
-        buffer[i] = '\0';
+// Print ServerConfig (test)
+void print_server_config(ServerConfig *server_config) {
+    printf("Server Name: %s\n", server_config->name);
+    printf("Server MAC: %s\n", server_config->mac);
+    printf("UDP Port: %d\n", server_config->udp_port);
+    printf("TCP Port: %d\n", server_config->tcp_port);
+}
+
+
+//##################   PDU    ########################
+
+PackageTypeUDP get_type_package(char *buffer) {
+    //check first byte and retorn the type of the datagram
+    switch (buffer[0]) {
+        case 0x00: return SUBS_REQ;
+        case 0x01: return SUBS_ACK;
+        case 0x02: return SUBS_REJ;
+        case 0x03: return SUBS_INFO;
+        case 0x04: return INFO_ACK;
+        case 0x05: return SUBS_NACK;
+        case 0x10: return HELLO;
+        case 0x11: return HELLO_REJ;
+        default: return ERROR_UDP;
     }
 }
 
-void write_to_buffer(char *buffer, char *value, int initial, int final) {
-    int value_length = final - initial;
-    for (int i = 0; i < value_length; i++) {
-        if (i < strlen(value)) {
-            buffer[initial + i] = value[i];
-        } else {
-            buffer[initial + i] = '\0';
-        }
-    }
-}
 
-char *read_from_buffer(char *buffer, int initial, int final) {
-    char *res = (char *)malloc(final);
-    int i = 0;
-    for (i = 0; i < final; i++) {
-        res[i] = buffer[initial + i];
-    }
-    res[i] = '\0';
-    return res;
-}
-
+//##################    VALIDATE PDU    ########################
 
 // check HELLO
 int validate_hello(char *buffer, ControllerInfo *controller){
@@ -146,7 +294,6 @@ int validate_hello(char *buffer, ControllerInfo *controller){
     if ((strcmp(mac_to_check, controller->mac) == 0) && (strcmp(number_to_check, controller->random_num) == 0)) {
         //valid Hello
         strncpy(controller->data_hello, data_hello_temp, DATA_UDP_LENGTH);
-        //controller.data_hello[DATA_UDP_LENGTH] = '\0';
         return 1;
     }
     
@@ -154,19 +301,13 @@ int validate_hello(char *buffer, ControllerInfo *controller){
     return 0;
 }
 
-
-
 // check INFO_ACK
 int validate_sub_info(char *buffer, ControllerInfo *controller){
 
     int total_bytes = 1; //already writen
-    //char mac_to_check[MAC_ADDRESS_LENGTH];
-    //read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH, mac_to_check);
     char *mac_to_check = read_from_buffer(buffer, total_bytes, MAC_ADDRESS_LENGTH);
         
     total_bytes += MAC_ADDRESS_LENGTH;  //number of readed bytes
-    //char number_to_check[RANDOM_NUM_LENGTH];
-    //read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH, number_to_check);
     char *number_to_check = read_from_buffer(buffer, total_bytes, RANDOM_NUM_LENGTH);    
     
     //TCP PORT is before a ',' so read until reach one the rest go for elements
@@ -195,7 +336,6 @@ int validate_sub_info(char *buffer, ControllerInfo *controller){
     
 
     port_tcp_client[PORT_LENGTH] = '\0';
-    //elements_client[i-c] = '\0';
     elements_client[len_ele] = '\0';
     
     // check if the mac and random_number match with the controller
@@ -204,29 +344,12 @@ int validate_sub_info(char *buffer, ControllerInfo *controller){
         //client sent his own tcp port to communicate
         controller->tcp_port = atoi(port_tcp_client); //to int
         strcpy(controller->elements_data, elements_client);
-        
-        //strncpy(controller.elements_data, elements_client, DATA_UDP_LENGTH);
-        //controller.elements_data[DATA_UDP_LENGTH] = '\0';
-        //print_val(controller.elements_data,DATA_UDP_LENGTH);
         return 1;
     }
-    
     
     //invalid INFO_ACK
     return 0;
 }
-
-
-int get_pos_for_pipe_controller(ControllerInfo pipe_controller, ControllerInfo *all_controllers, int num_controllers){
-    // check if the match any controller
-    for (int i = 0; i < num_controllers; i++) {
-        if (strcmp(pipe_controller.name, all_controllers[i].name) == 0){
-            return i;
-        }
-    }
-    return -1;
-}
-
 
 // check SUB_REQ package
 int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controllers) {
@@ -273,6 +396,8 @@ int validate_sub_req(char *buffer, ControllerInfo *controllers, int num_controll
     //invalid SUB_REQ    
     return -1;
 }
+
+//##################    CREATE PDU    ########################
 
 //create hello_rej
 char *create_pdu_hello_rej(ServerConfig server_config){
@@ -382,178 +507,69 @@ char *create_pdu_subs_rej(ServerConfig server_config) {
     return sub_rej;
 }
 
-//random num for clients
-char *generate_random_number() {
-    srand(time(NULL));
-    int random_num = rand() % 100000000;
-    char *random_str = (char *)malloc((RANDOM_NUM_LENGTH + 1) * sizeof(char));
 
-    //pass num to str only 8 digits
-    sprintf(random_str, "%08d", random_num);
-    return random_str;
+//##################    CONTROLLERS    ########################
+
+void disconnect_controller(ControllerInfo *controller){
+    controller->state=DISCONNECTED;
+    controller->socket_child = -1;
+    strcpy(controller->random_num, "00000000");
 }
 
-PackageTypeUDP get_type_package(char *buffer) {
-    //check first byte and retorn the type of the datagram
-    switch (buffer[0]) {
-        case 0x00: return SUBS_REQ;
-        case 0x01: return SUBS_ACK;
-        case 0x02: return SUBS_REJ;
-        case 0x03: return SUBS_INFO;
-        case 0x04: return INFO_ACK;
-        case 0x05: return SUBS_NACK;
-        case 0x10: return HELLO;
-        case 0x11: return HELLO_REJ;
-        default: return ERROR_UDP;
+char *state_to_str(ClientStates state) {
+    switch (state) {
+        case DISCONNECTED:
+            return "DISCONNECTED";
+        case NOT_SUBSCRIBED:
+            return "NOT_SUBSCRIBED";
+        case WAIT_ACK_SUBS:
+            return "WAIT_ACK_SUBS";
+        case WAIT_INFO:
+            return "WAIT_INFO";
+        case WAIT_ACK_INFO:
+            return "WAIT_ACK_INFO";
+        case SUBSCRIBED:
+            return "SUBSCRIBED";
+        case SEND_HELLO:
+            return "SEND_HELLO";
+        case ERORR_STATE:
+            return "ERROR_STATE";
+        default:
+            return "UNKNOWN";
     }
 }
 
-int create_udp_socket(int port) {
-    int udp_socket;
-
-    // UDP 
-    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    if (udp_socket == -1) {
-
-        //print_format(3,"No ha sigut possible crear un socket UDP");
-        return -1;
-    }
-
-    // Server address structure
-    struct sockaddr_in addr_server;
-    memset(&addr_server, 0, sizeof(addr_server));
-    addr_server.sin_family = AF_INET;
-    addr_server.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr_server.sin_port = htons(port);
-
-    // Bind socket to the server address
-    if (bind(udp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
-        //print_format(3,"No ha sigut possible fer un bind del socket UDP");
-        //exit(1);
-        return -1;
-    }
-
-    return udp_socket;
-}
-
-// Function to create a TCP socket
-int create_tcp_socket(int port) {
-    int tcp_socket;
-
-    // Create TCP socket
-    tcp_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (tcp_socket == -1) {
-        print_format(3,"No ha sigut possible crear un socket TCP");
-        exit(1);
-    }
-
-    // Prepare server address structure
-    struct sockaddr_in addr_server;
-    memset(&addr_server, 0, sizeof(addr_server));
-    addr_server.sin_family = AF_INET;
-    addr_server.sin_addr.s_addr = htonl(INADDR_ANY);
-    addr_server.sin_port = htons(port);
-
-    // Bind socket to the server address
-    if (bind(tcp_socket, (struct sockaddr *)&addr_server, sizeof(addr_server)) == -1) {
-        print_format(3,"No ha sigut possible fer un bind del socket TCP");
-        exit(1);
-    }
-
-    // Queue wait | Max 5 connections
-    if (listen(tcp_socket, 5) == -1) {
-        print_format(3,"No ha sigut possible fer un listen del socket TCP");
-        exit(1);
-    }
-
-    return tcp_socket;
-}
-
-// Print ServerConfig (test)
-void print_server_config(ServerConfig *server_config) {
-    printf("Server Name: %s\n", server_config->name);
-    printf("Server MAC: %s\n", server_config->mac);
-    printf("UDP Port: %d\n", server_config->udp_port);
-    printf("TCP Port: %d\n", server_config->tcp_port);
-}
-
-//load server file
-void read_server_file(const char *filename, ServerConfig *server_config) {
-    // Open the file
-    FILE *file = fopen(filename, "r");
-    if (file == NULL) {
-        char error_message[100] = "No es pot obrir l'arxiu de configuració:";
-        strcat(error_message, filename);
-        print_format(3, error_message);
-        exit(1);
-    }
-
-    // Set server configuration parameters
-    fscanf(file, "Name = %8s\n", server_config->name);
-    fscanf(file, "MAC = %12s\n", server_config->mac);
-    fscanf(file, "UDP-port = %d\n", &server_config->udp_port);
-    fscanf(file, "TCP-port = %d\n", &server_config->tcp_port);
-    fclose(file);
-}
-
-//load controller file
-int read_controllers_file(const char *filename, ControllerInfo **controllers) {
-    // Open the file
-    FILE *file = fopen(filename, "r");
-    if (file == NULL) {
-        print_format(3, "No es pot obrir la base de dades de controladors");
-        exit(1);
-    }
-
-    // Count the number of controllers in the file
-    int num_controllers = 0;
-    char line[256];
-    while (fgets(line, sizeof(line), file) != NULL) {
-        num_controllers++;
-    }
-
-    //// Save memory for the array of controllers
-    *controllers = malloc(num_controllers * sizeof(ControllerInfo));
-    rewind(file); //Go back at the start of the file
-
-    for (int i = 0; i < num_controllers; i++) {
-        // Set controller information from the file
-        //%[^,] stop reading when reaching a ,
-        //also then %s read string after ,
-        fscanf(file, "%[^,],%s\n", (*controllers)[i].name, (*controllers)[i].mac);
-        (*controllers)[i].state = DISCONNECTED; //disconnected
-        strcpy((*controllers)[i].random_num, "00000000"); // set the random num     
-        (*controllers)[i].socket_child = -1;
-    }
-
-    fclose(file);
-
-    return num_controllers;
+void set_state_controller(ControllerInfo *controller, int state){
+    controller->state=state;
 }
 
 
-void load_server_files(ProgramArgs *args, ServerConfig *server_config, ControllerInfo **controllers) {
-    //Get config path
-    char file_path[100];
-    strcpy(file_path, CONFIG_PATH);
+//##################    OTHERS    ########################
 
-    //Get Server Path
-    char file_path_server[100];
-    strcpy(file_path_server, file_path);
-    strcat(file_path_server, args->server_file);
 
-    //Get Controllers Path
-    char file_path_controllers[100];
-    strcpy(file_path_controllers, file_path);
-    strcat(file_path_controllers, args->controllers_file);
+void fill_empty_to_buffer(char *buffer, int initial) {
+    for (int i = initial; i < MAX_UDP_MESSAGE_SIZE; i++) {
+        buffer[i] = '\0';
+    }
+}
 
-    //Read server config
-    read_server_file(file_path_server, server_config);
+void write_to_buffer(char *buffer, char *value, int initial, int final) {
+    int value_length = final - initial;
+    for (int i = 0; i < value_length; i++) {
+        if (i < strlen(value)) {
+            buffer[initial + i] = value[i];
+        } else {
+            buffer[initial + i] = '\0';
+        }
+    }
+}
 
-    // Read controllers
-    int num_controllers = read_controllers_file(file_path_controllers, controllers);
-    server_config->num_controllers=num_controllers;
-
-    //print_server_config(server_config);
-    //print_controller_info(*controllers, num_controllers);
+char *read_from_buffer(char *buffer, int initial, int final) {
+    char *res = (char *)malloc(final);
+    int i = 0;
+    for (i = 0; i < final; i++) {
+        res[i] = buffer[initial + i];
+    }
+    res[i] = '\0';
+    return res;
 }

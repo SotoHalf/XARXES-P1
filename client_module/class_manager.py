@@ -324,8 +324,6 @@ class SocketSetup:
 
     def setup_udp(self):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        port_net = socket.htons(self.port)
-        self.sock.bind((self.destination, port_net))
         self.connected = True
     
     def setup_tcp(self):
@@ -341,19 +339,22 @@ class SocketSetup:
         self.port = port
 
     def sendto(self, pdu: PDU, timeout = 1):
-        if self.connected:
-            self.sock.settimeout(timeout)
-            packet = pdu.get_packet()
+        try:
+            if self.connected:
+                self.sock.settimeout(timeout)
+                packet = pdu.get_packet()
 
-            if self.sock_type == SocketType.UDP:
-                self.sock.sendto(packet, (self.destination, self.port))
-            elif self.sock_type == SocketType.TCP:
-                self.sock.sendall(packet)
-        else:
-            if self.sock_type == SocketType.UDP:
-                self.setup_udp()
-            elif self.sock_type == SocketType.TCP:
-                self.setup_udp()
+                if self.sock_type == SocketType.UDP:
+                    self.sock.sendto(packet, (self.destination, self.port))
+                elif self.sock_type == SocketType.TCP:
+                    self.sock.sendall(packet)
+            else:
+                if self.sock_type == SocketType.UDP:
+                    self.setup_udp()
+                elif self.sock_type == SocketType.TCP:
+                    self.setup_udp()
+        except:
+            pass
 
 
     def recvData(self):

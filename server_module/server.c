@@ -12,38 +12,23 @@
 #include "util_functions.h"
 
 
-// Function to parse program arguments
-void parse_arguments(int argc, char *argv[], ProgramArgs *args) {
+//##################    GLOBAL VALUES    ########################
 
-    strcpy(args->server_file, CONFIG_FILE_DEFAULT);
-    args->debug = 0;
-    strcpy(args->controllers_file, CONTROLLERS_FILE_DEFAULT);
+ControllerInfo *controllers; //Save all data relative to the client
+ServerConfig server_config; //Server configuration
+int udp_socket;
+int tcp_socket;
 
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-d") == 0) {
-            args->debug = 1;
-        } else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc) {
-            strcpy(args->server_file, argv[i + 1]);
-            i++;
-        } else if (strcmp(argv[i], "-u") == 0 && i + 1 < argc) {
-            strcpy(args->controllers_file, argv[i + 1]);
-            i++;
-        }
-    }
-}
+//##################    PRINTS    ########################
 
+// Controller -> Print state 
 void show_state_client(ControllerInfo *controller){
     char msg[100];
     sprintf(msg, "Controlador: %s, passa a l'estat: %s", controller->name, state_to_str(controller->state));
     print_format(1,msg);
 }
 
-ControllerInfo *controllers;
-ServerConfig server_config;
-int udp_socket;
-int tcp_socket;
-int run_command_thread = 1;
-
+//List function print data formatted
 void print_controllers_state() {
     printf("--NOM--- ------IP------- -----MAC---- --RNDM-- ----ESTAT--- --SITUACIÓ-- --ELEMENTS-------------------------------------------\n");
     for (int i = 0; i < server_config.num_controllers; i++) {
@@ -95,6 +80,9 @@ void print_controllers_state() {
     }
 }
 
+//##################    FUNCTIONS    ########################
+
+//Close all opened socket and free memory
 void disconnect_controllers() {
     for (int i = 0; i < server_config.num_controllers; i++) {
         close(controllers[i].socket_child); // close sokets
@@ -103,6 +91,9 @@ void disconnect_controllers() {
     exit(0);
 }
 
+//##################    THREADS    ########################
+
+//Thread used to handle commands
 void *command_handler(void *arg) {
     pid_t parent_pid = *((pid_t*)arg); 
 
@@ -118,24 +109,28 @@ void *command_handler(void *arg) {
     }
 }
 
+//Thread struct 
 typedef struct {
     int controller_udp_socket;
-    //struct sockaddr_in client_addr;
-    //socklen_t addr_len;
     int pos;
     int debug;
 } ControllerHandlerArgs;
 
+//Used to handle with multiple clients
 void *controller_handler(void *arg) {
     ControllerHandlerArgs *args = (ControllerHandlerArgs *)arg;
 
+    //Get the controller from global array
     ControllerInfo *controller;
     controller = &controllers[args->pos];
+
     controller->state = SUBSCRIBED;
 
     struct sockaddr_in client_addr_child;
     socklen_t addr_len_child = sizeof(client_addr_child);
 
+
+    //SUBS_INFO -> process
     int info_valid_received = 0;
     int s = 2; // retries
     while (s > 0 && !info_valid_received) {
@@ -146,15 +141,18 @@ void *controller_handler(void *arg) {
             continue;
         }
         info_buffer[info_bytes_received] = '\0';
+
         int type_package = get_type_package(info_buffer);
-        
+        //In case client response with a SUBS_INFO datagram
         if (type_package == SUBS_INFO) {
             if (validate_sub_info(info_buffer, controller)) {
                 info_valid_received = 1;
+                //it's valid
             } else {
                 //failed send rejected
                 char *sub_rej = create_pdu_subs_rej(server_config);
                 sendto(controller->socket_child, sub_rej, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr_child, addr_len_child);
+                //Close section
                 disconnect_controller(controller);
                 show_state_client(controller);
                 close(controller->socket_child);
@@ -166,6 +164,7 @@ void *controller_handler(void *arg) {
         sleep(1);
     }
     
+    //In case that the SUBS_INFO is valid
     if (info_valid_received) {
         //sned info ack
         char *info_ack = create_pdu_info_ack(server_config, *controller);
@@ -173,10 +172,13 @@ void *controller_handler(void *arg) {
         set_state_controller(controller, SUBSCRIBED);
         show_state_client(controller);
 
-        //keep hello here
+        //Keep hello communications
         int x = 3; //attemps lost package
-        int first = 1;
+        int first = 1; //know if it's the first hello
+        //While controller = SUBSCRIBED|SEND_HELLO
         while ((controller->state == SUBSCRIBED && x > 0) || (controller->state == SEND_HELLO && x > 0)){
+
+            //READ HELLO 
             char hello_buffer[MAX_UDP_MESSAGE_SIZE];
             int hello_bytes_received = recvfrom(controller->socket_child, hello_buffer, sizeof(hello_buffer), 0, (struct sockaddr *)&client_addr_child, &addr_len_child);
             if (hello_bytes_received == -1) {
@@ -189,13 +191,15 @@ void *controller_handler(void *arg) {
             if (type_package == HELLO) {
                 
                 if (validate_hello(hello_buffer, controller)) {
+                    //In case to be valid and the first time we recive 
+                    //hello, we must change the state to SEND_HELLO
                     if (first){
                         set_state_controller(controller, SEND_HELLO);
                         show_state_client(controller);
                         first = 0;
                     }
 
-                    x = 3;
+                    x = 3; //Reset retries cause we just recived a valid hello
                     char *hello = create_pdu_hello(server_config, *controller);
                     sendto(controller->socket_child, hello, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr_child, addr_len_child);
                     
@@ -206,22 +210,25 @@ void *controller_handler(void *arg) {
                     }
 
                 } else {
+                    //REJECTED
                     char msg_helo_supl[100];
                     sprintf(msg_helo_supl, "Controlador %s [%s] ha sigut suplantat", controller->name, controller->mac);
                     print_format(1,msg_helo_supl);
                     //failed send rejected
                     char *hello_rej = create_pdu_hello_rej(server_config);
                     sendto(controller->socket_child, hello_rej, MAX_UDP_MESSAGE_SIZE, 0, (struct sockaddr *)&client_addr_child, addr_len_child);
+                    //Close section
                     disconnect_controller(controller);
                     show_state_client(controller);
                     close(controller->socket_child);
                     return NULL;
                 }
             }else if (type_package == HELLO_REJ) {
-                
+                //REJECTED
                 char msg_hello_rej[100];
                 sprintf(msg_hello_rej, "Controlador %s [%s] ha enviat un HELLO_REJ", controller->name, controller->mac);
                 print_format(1,msg_hello_rej);
+                //Close section
                 disconnect_controller(controller);
                 show_state_client(controller);
                 close(controller->socket_child);
@@ -233,14 +240,17 @@ void *controller_handler(void *arg) {
         }
 
         if (x <= 0){
+            //REJECTED TIMEOUT
             char msg_hello_timeout[100];
             sprintf(msg_hello_timeout, "Controlador %s [%s] no ha rebut 3 HELLO consecutius", controller->name, controller->mac);
             print_format(1,msg_hello_timeout);
+            //Close section
             disconnect_controller(controller);
             show_state_client(controller);
             close(controller->socket_child);
             return NULL;
         }else{
+            //Close section
             close(controller->socket_child);
             return NULL;
         }
@@ -249,35 +259,35 @@ void *controller_handler(void *arg) {
     return NULL;
 }
 
+//##################    SIGNALS    ########################
+
 // SIGINT (Ctrl+C) and Quit
 void sigint_handler(int sig) {
-    if (run_command_thread) {
-        kill(0, SIGINT);
-        disconnect_controllers(); //parent close sockets
-    }else{
-        kill(getpid(), SIGINT); //child kill
-    }
+    kill(0, SIGINT);
+    disconnect_controllers(); //parent close sockets
 }
 
+//##################    MAIN    ########################
+
 int main(int argc, char *argv[]) {
+
+    //load arguments passed by user
     ProgramArgs args;
     parse_arguments(argc, argv, &args);
-
-    //ServerConfig server_config;
-    //ControllerInfo *controllers;
-
     load_server_files(&args, &server_config, &controllers);
-
     
+    
+    //THREAD to handle commands
     int main_pid = getpid();
-
     pthread_t commands_thread;
     if (pthread_create(&commands_thread, NULL, command_handler, (void*)&main_pid) != 0) {
         exit(1);
     }
 
+    //Signals
     signal(SIGINT, sigint_handler);
 
+    //SOCKETS INITIALIZATION
     udp_socket = create_udp_socket(server_config.udp_port);
     tcp_socket = create_tcp_socket(server_config.tcp_port);
     
@@ -298,13 +308,14 @@ int main(int argc, char *argv[]) {
         int type_package = get_type_package(buffer);
 
         if (type_package == SUBS_REQ) {
+            //check if controller exists and if it's valid
             int controller_pos = validate_sub_req(buffer, controllers, server_config.num_controllers);
-            //check if controller exists
+            
             if (controller_pos != -1) {
                 ControllerInfo *controller = &controllers[controller_pos];
 
                 if (controller->state == DISCONNECTED){
-                    controller->state=WAIT_INFO;
+                    
                     strcpy(controller->random_num, generate_random_number());
 
                     //Assign a new UDP port for the controller
@@ -335,19 +346,19 @@ int main(int argc, char *argv[]) {
                         (struct sockaddr *)&client_addr, addr_len);
 
                     show_state_client(controller);
+
                     if (args.debug){
-                        print_format(2,"Creació d'un subprocés (FORK)");
+                        print_format(2,"Creació d'un nou fil (THREAD)");
                     }
 
+                    //Save created socket 
+                    controller->state=WAIT_INFO;
                     controller->socket_child = controller_udp_socket;
                     
-                    //ControllerHandlerArgs argsThread;
+                    //Creates new thread to handle with the client
                     ControllerHandlerArgs argsThread;
-                    //argsThread.client_addr = client_addr;
-                    //argsThread.addr_len = addr_len;
                     argsThread.debug = args.debug;
                     argsThread.pos = controller_pos;
-                    
                     pthread_t controller_thread;
                     if (pthread_create(&controller_thread, NULL, controller_handler, (void *)&argsThread) != 0) {
                         exit(1);
