@@ -1,13 +1,5 @@
 # XARXES-P1
 
----
-
-## Autor
-- **Nombre:** Raúl Soto
-- **Universidad:** Escuela Politécnica Superior de la Universidad de Lleida
-
----
-
 ## Resumen del Proyecto
 Este proyecto se centra en el funcionamiento de un sistema cliente-servidor.
 Creado como práctica de laboratorio para la universidad.
@@ -30,4 +22,4 @@ Realizado en C y Python.
 
 ## GitHub del proyecto
 
-https://github.com/Rapite46/XARXES-P1
+https://github.com/SotoHalf/XARXES-P1
